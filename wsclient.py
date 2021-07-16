@@ -1,10 +1,14 @@
+from typing import Set
 import websockets
 import attr
 import asyncio
 import json
 import random
 import string
+import datetime
+import time
 
+from janus import PluginData, Media, SessionStatus, WebrtcUp, SlowLink, HangUp, Ack, JanusSession
 from websockets.exceptions import ConnectionClosed
 
 # Random Transaction ID        
@@ -12,51 +16,10 @@ def transaction_id():
     return "".join(random.choice(string.ascii_letters) for x in range(12))
 
 @attr.s
-class JanusEvent:
-    sender = attr.ib(validator=attr.validators.instance_of(int))
-
-@attr.s
-class PluginData(JanusEvent):
-    plugin = attr.ib(validator=attr.validators.instance_of(str))
-    data = attr.ib()
-    jsep = attr.ib()
-
-@attr.s
-class WebrtcUp(JanusEvent):
-    pass
-
-@attr.s
-class Media(JanusEvent):
-    receiving = attr.ib(validator=attr.validators.instance_of(bool))
-    kind = attr.ib(validator=attr.validators.in_(["audio", "video"]))
-
-    @kind.validator
-    def validate_kind(self, attribute, kind):
-        if kind not in ["video", "audio"]:
-            raise ValueError("kind must equal video or audio")
-
-@attr.s
-class SlowLink(JanusEvent):
-    uplink = attr.ib(validator=attr.validators.instance_of(bool))
-    lost = attr.ib(validator=attr.validators.instance_of(int))
-
-@attr.s
-class HangUp(JanusEvent):
-    reason = attr.ib(validator=attr.validators.instance_of(str))
-
-@attr.s(cmp=False)
-class Ack:
-    transaction = attr.ib(validator=attr.validators.instance_of(str))
-
-@attr.s
-class Jsep:
-    sdp = attr.ib()
-    type = attr.ib(validator=attr.validators.in_(["offer", "pranswer", "answer", "rollback"]))
-
-@attr.s
-class JanusGateway:
+class WebSocketClient:
     server = attr.ib(validator=attr.validators.instance_of(str))
     _messages = attr.ib(factory=set)
+    _sessions = {}
 
     async def connect(self):
         self.conn = await websockets.connect(self.server, subprotocols=['janus-protocol'])
@@ -75,7 +38,7 @@ class JanusGateway:
     async def close(self):
         await self.conn.close()
 
-    async def attach(self, plugin):
+    async def _attach(self, plugin):
         assert hasattr(self, "session"), "Must connect before attaching to plugin"
         transaction = transaction_id()
         await self.conn.send(json.dumps({
@@ -90,7 +53,7 @@ class JanusGateway:
         assert parsed["transaction"] == transaction, "Incorrect transaction"
         self.handle = parsed["data"]["id"]
     
-    async def sendmessage(self, body, jsep=None):
+    async def _sendmessage(self, body, jsep=None):
         assert hasattr(self, "session"), "Must connect before sending messages"
         assert hasattr(self, "handle"), "Must attach before sending messages"
         transaction = transaction_id()
@@ -105,7 +68,7 @@ class JanusGateway:
             janus_message["jsep"] = jsep
         await self.conn.send(json.dumps(janus_message))
 
-    async def keepalive(self):
+    async def _keepalive(self):
         assert hasattr(self, "session"), "Must connect before sending messages"
         assert hasattr(self, "handle"), "Must attach before sending messages"
 
@@ -122,7 +85,7 @@ class JanusGateway:
             except KeyboardInterrupt:
                 return
 
-    async def recv(self):
+    async def _recv(self):
         if len(self._messages) > 0:
             return self._messages.pop()
         else:
@@ -168,23 +131,33 @@ class JanusGateway:
         else:
             return raw
 
-    async def loop(self, room):
+    async def _handle_plugin_data(self, data):
+        print("handle plugin data: \n", data)
+
+        if data.jsep is not None:
+            print("handle jesp data")
+        if data.data is not None:
+            events_type = data.data["videoroom"]
+            if events_type == "joined":
+                publishers = data.data["publishers"]
+                print("Publishes in the room: \n")
+                for publisher in publishers:
+                    print("id: %(id)s, display: %(display)s" % publisher)
+
+    async def loop(self):
         await self.connect()
         await self.attach("janus.plugin.videoroom")
 
         loop = asyncio.get_event_loop()
-        loop.create_task(self.keepalive())
-
-        joinmessage = { "request": "join", "ptype": "subscriber", "room": room, "pin": str(room), "display": "RecordMachine" }
-        await self.sendmessage(joinmessage)
+        loop.create_task(self._keepalive())
 
         assert self.conn
 
         while True:
             try:
-                msg = await self.recv()
+                msg = await self._recv()
                 if isinstance(msg, PluginData):
-                    await self.handle_plugin_data(msg)
+                    await self._handle_plugin_data(msg)
                 elif isinstance(msg, Media):
                     print (msg)
                 elif isinstance(msg, WebrtcUp):
@@ -199,3 +172,28 @@ class JanusGateway:
                 return
 
         return 0
+
+
+    async def monitor_room(self, room, pin):
+        display = "record_" + str(room)
+        start_time = time.time()
+
+        session = JanusSession(room=room, pin=pin, display=display, startedTime=start_time)
+        self._sessions[room] = session
+
+        joinmessage = { "request": "join", "ptype": "subscriber", "room": room, "pin": str(pin), "display": display }
+        await self._sendmessage(joinmessage)
+
+        session.status = SessionStatus.Started
+
+        # preparations: 
+        self._create_folders(session)
+        self._create_sdp(session)
+
+    def _create_folders(self, session: JanusSession):
+        print("Creating room file folder...")
+        session.create_file_folder
+
+    def _create_sdp(self, session: JanusSession):
+        print("Creating SDP file for ffmpeg...")
+        session.create_sdp()

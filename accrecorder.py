@@ -9,7 +9,7 @@ import asyncio
 from os import curdir, sep
 from collections import namedtuple
 from aiohttp import web
-from janusgateway import janus
+from wsclient import WebSocketClient
 
 ROOT = os.path.dirname(__file__)
                       
@@ -32,6 +32,7 @@ async def start(request):
     if room.isdigit() == False:
         resp = json_response(False, -1, "Please input correct Room number!")
 
+    await ws.monitor_room(room, resp["pin"])
     resp = json_response(True, 0, "Start recording...")
 
     return web.Response(
@@ -57,6 +58,11 @@ async def stop(request):
 
 async def on_shutdown(app):
     print("Web server is shutting down...")
+    # close ws
+    loop.run_until_complete(ws.close())
+
+    loop.stop()
+    loop.close()
 
 
 if __name__ == "__main__":
@@ -77,3 +83,21 @@ if __name__ == "__main__":
     app.router.add_post("/record/stop", stop)
 
     web.run_app(app, host='127.0.0.1', port=args.port)
+    
+    ws = WebSocketClient(args.janus)
+    loop = asyncio.get_event_loop()
+
+    try:
+        loop.run_until_complete(
+             ws.loop()
+        )
+    except KeyboardInterrupt:
+        pass
+    finally:
+        print("Stopping now!")
+        loop.run_until_complete(ws.close())
+
+        loop.stop()
+        loop.close()
+        
+
