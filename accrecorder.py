@@ -1,8 +1,6 @@
 #!/usr/bin/python
 import os
 import argparse
-import subprocess
-import signal
 import json
 import asyncio
 
@@ -35,8 +33,15 @@ async def start(request):
     if room.isdigit() == False:
         resp = json_response(False, -1, "Please input correct Room number!")
 
-    await ws.monitor_room(int(room), form["pin"])
-    resp = json_response(True, 0, "Start recording...")
+    publisher = form["publisher"]
+    if room.isdigit() == False:
+        resp = json_response(False, -2, "Please input correct publisher identifier!")
+
+    success = await ws.startrecording(int(room), form["pin"], publisher)
+    if success:
+        resp = json_response(True, 0, "Start recording...")
+    else:
+        resp = json_response(False, -3, "Current publisher {p} is recording".format(p=publisher))
 
     print("[END]")
     return web.json_response(resp)
@@ -52,7 +57,15 @@ async def stop(request):
     if room.isdigit() == False:
         resp = json_response(False, -1, "Please input correct Room number!")
 
-    resp = json_response(True, 0, "Stop recording")
+    publisher = form["publisher"]
+    if room.isdigit() == False:
+        resp = json_response(False, -2, "Please input correct publisher identifier!")
+
+    success = await ws.stoprecording(int(room), publisher)
+    if success:
+        resp = json_response(True, 0, "Stop recording")
+    else:
+        resp = json_response(False, -3, "Current publisher {p} is not recording".format(p=publisher))        
 
     print("[END]")
     return web.json_response(resp)

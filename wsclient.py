@@ -5,8 +5,10 @@ import asyncio
 import json
 import random
 import string
-import datetime
 import time
+import subprocess
+import signal
+import os
 
 from janus import PluginData, Media, SessionStatus, WebrtcUp, SlowLink, HangUp, Ack, JanusSession
 from websockets.exceptions import ConnectionClosed
@@ -19,6 +21,7 @@ def transaction_id():
 class WebSocketClient:
     server = attr.ib(validator=attr.validators.instance_of(str))
     _messages = attr.ib(factory=set)
+    _joined = False
     _sessions = {}
 
     async def connect(self):
@@ -54,6 +57,8 @@ class WebSocketClient:
         self.handle = parsed["data"]["id"]
     
     async def _sendmessage(self, body, jsep=None):
+        print("send message, body", body)
+
         assert hasattr(self, "session"), "Must connect before sending messages"
         assert hasattr(self, "handle"), "Must attach before sending messages"
         transaction = transaction_id()
@@ -173,27 +178,93 @@ class WebSocketClient:
 
         return 0
 
+    # 是否已经加入了房间
+    def _is_forwarding(self, key):
+        if key in self._sessions: 
+            return True
+        return False
 
-    async def monitor_room(self, room, pin):
+    # 开始录制
+    async def startrecording(self, room, pin, publisherid):
         display = "record_" + str(room)
         start_time = time.time()
 
-        session = JanusSession(room=room, pin=pin, display=display, startedTime=start_time)
-        self._sessions[room] = session
+        session = JanusSession(room=room, pin=pin, display=display, publisher=publisherid, startedTime=start_time)
+        session_key = str(room) + "-" + publisherid
 
-        joinmessage = { "request": "join", "ptype": "subscriber", "room": room, "pin": str(pin), "display": display }
-        await self._sendmessage(joinmessage)
+        if self._joined == False:
+            joinmessage = { "request": "join", "ptype": "publisher", "room": room, "pin": str(room), "display": display, "id": 911 }
+            await self._sendmessage(joinmessage)
+            self._joined = True
+        else:
+            print("Current recorder is int the room")
 
-        session.status = SessionStatus.Started
+        if self._is_forwarding(session_key) == False:
+            self._sessions[session_key] = session
+            session.status = SessionStatus.Started
 
-        # preparations: 
-        self._create_folders(session)
-        self._create_sdp(session)
+            # preparations: 
+            self._create_folders(session)
+            self._create_sdp(session)
 
-    def _create_folders(self, session: JanusSession):
+            # 开启转发
+            await self._forward_rtp(session)
+            return True
+        else:
+           print("The publisher {p} in the room {r} is forwarding".format(p=session.publisher, r=session.room))
+           return False
+
+    def _create_folders(self, session:JanusSession):
         print("Creating room file folder...")
         session.create_file_folder()
 
-    def _create_sdp(self, session: JanusSession):
+    def _create_sdp(self, session:JanusSession):
         print("Creating SDP file for ffmpeg...")
         session.create_sdp()
+
+    # forwarding_rtp to local server
+    async def _forward_rtp(self, session:JanusSession):
+        forwarding_obj = session.forwarding_obj()
+        forwardmessage = { "request": "rtp_forward", "secret": "adminpwd" }.copy()
+        forwardmessage.update(forwarding_obj)
+        await self._sendmessage(forwardmessage)
+
+        self._launchrecorder(session)
+
+        print("Now publisher {p} in the room {r} is forwarding".format(p=session.publisher, r=session.room))
+        session.status = SessionStatus.Forwarding
+
+    def _launchrecorder(self, session:JanusSession):
+        folder = session.folder
+        file_path = folder + str(session.publisher) + ".ts"
+        sdp = folder + session.forwarder.name
+        proc = subprocess.Popen(['ffmpeg', '-loglevel', 'debug', '-hide_banner', '-protocol_whitelist', 'file,udp,rtp', '-i', sdp, '-c:v', 'copy', '-c:a', 'copy', file_path])
+
+        session.recorder_pid = proc.pid
+
+        print("Now publisher {p} in the room {r} is recording".format(p=session.publisher, r=session.room))
+        session.status = SessionStatus.Recording
+
+    # 结束当前 publisher 的录制
+    async def stoprecording(self, room, publisherid):
+        session = self.session(room, publisherid)
+
+        if session is not None:
+            forwarding_obj = session.forwarding_obj()
+            forwardmessage = { "request": "stop_rtp_forward", "secret": "adminpwd" }.update(forwarding_obj)
+            await self._sendmessage(forwardmessage)
+
+            os.kill(session.recorder_pid, signal.SIGINT)
+            session.recorder_pid = None
+
+            print("Now publisher {p} in the room {r} is Stopped recording".format(p=session.publisher, r=session.room))
+            session.status = SessionStatus.Stopped
+
+            return True
+        else:
+           print("The publisher {p} in the room {r} is NOT publishing".format(p=session.publisher, r=session.room))
+           return False
+
+    def session(self, room, publisher):
+        session_key = str(room) + "-" + str(publisher)
+        return self._sessions[session_key]
