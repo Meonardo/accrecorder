@@ -146,7 +146,7 @@ class WebSocketClient:
 
     async def loop(self):
         await self.connect()
-        await self.attach("janus.plugin.videoroom")
+        await self._attach("janus.plugin.videoroom")
 
         loop = asyncio.get_event_loop()
         loop.create_task(self._keepalive())
@@ -192,7 +192,7 @@ class WebSocketClient:
 
     def _create_folders(self, session: JanusSession):
         print("Creating room file folder...")
-        session.create_file_folder
+        session.create_file_folder()
 
     def _create_sdp(self, session: JanusSession):
         print("Creating SDP file for ffmpeg...")

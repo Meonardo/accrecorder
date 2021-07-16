@@ -12,11 +12,12 @@ from aiohttp import web
 from wsclient import WebSocketClient
 
 ROOT = os.path.dirname(__file__)
+ws: WebSocketClient = None
                       
 # common response   
 def json_response(success, code, data):
-    dict = {"success": success, "code": code, "data": data}
-    return json.dumps(dict, indent = 4).encode(encoding='utf_8')
+    return {"success": success, "code": code, "data": data}
+    # return json.dumps(dict, indent = 4).encode(encoding='utf_8')
 
 # index
 async def index(request):
@@ -25,36 +26,36 @@ async def index(request):
 
 # check start command 
 async def start(request):
-    params = await request.json()
+    form = await request.post()
+    print(u"[START]:Incoming Request: {r}, form: {f}".format(r=request, f=form))
+
     resp = json_response(False, 0, "default response")
 
-    room = params["room"]
+    room = form["room"]
     if room.isdigit() == False:
         resp = json_response(False, -1, "Please input correct Room number!")
 
-    await ws.monitor_room(room, resp["pin"])
+    await ws.monitor_room(int(room), form["pin"])
     resp = json_response(True, 0, "Start recording...")
 
-    return web.Response(
-        content_type = "application/json",
-        text = resp,
-    )
+    print("[END]")
+    return web.json_response(resp)
 
 # check stop command
 async def stop(request):
-    params = await request.json()
+    form = await request.post()
+    print(u"[START]:Incoming Request: {r}, form: {f}".format(r=request, f=form))
+
     resp = json_response(False, 0, "default response")
 
-    room = params["room"]
+    room = form["room"]
     if room.isdigit() == False:
         resp = json_response(False, -1, "Please input correct Room number!")
 
     resp = json_response(True, 0, "Stop recording")
 
-    return web.Response(
-        content_type = "application/json",
-        text = resp,
-    )
+    print("[END]")
+    return web.json_response(resp)
 
 async def on_shutdown(app):
     print("Web server is shutting down...")
@@ -68,7 +69,7 @@ async def on_shutdown(app):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="accrecorder")
     parser.add_argument(
-        "--janus", default="ws://127.0.0.1:8188", help="Janus gateway address (default: 127.0.0.1:8188)"
+        "--janus", default="ws://192.168.5.12:8188", help="Janus gateway address (default: 127.0.0.1:8188)"
     )
     parser.add_argument(
         "--port", type=int, default=9002, help="Port for HTTP server (default: 9002)"
@@ -82,22 +83,20 @@ if __name__ == "__main__":
     app.router.add_post("/record/start", start)
     app.router.add_post("/record/stop", stop)
 
-    web.run_app(app, host='127.0.0.1', port=args.port)
-    
     ws = WebSocketClient(args.janus)
     loop = asyncio.get_event_loop()
-
+    
     try:
-        loop.run_until_complete(
-             ws.loop()
-        )
+        runner = web.AppRunner(app)
+        loop.run_until_complete(runner.setup())
+        site = web.TCPSite(runner, host="127.0.0.1", port=args.port)    
+        loop.run_until_complete(site.start())
+        loop.run_until_complete(ws.loop())
+        
     except KeyboardInterrupt:
         pass
     finally:
         print("Stopping now!")
         loop.run_until_complete(ws.close())
-
-        loop.stop()
-        loop.close()
         
 

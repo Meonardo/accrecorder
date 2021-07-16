@@ -1,3 +1,4 @@
+from logging import raiseExceptions
 import attr
 import random
 import time
@@ -63,12 +64,11 @@ class SessionStatus(Enum):
         Failed = -1
 
 PORTS = []
-FILE_ROOT_PATH = "/User/mac/File/Combine/.recordings/"
+FILE_ROOT_PATH = "/Users/amdox/File/Combine/.recordings/"
 
 def ramdom_port():
     p = random.randint(20001, 50000)
     if p not in PORTS:
-        global PORTS
         PORTS.append(p)
         return p
     else:
@@ -77,9 +77,9 @@ def ramdom_port():
 class JanusSession:
 
     class Forwarding:
-        def __init__(self, aport, vpt=102, apt=96):
-            self.videoport = ramdom_port
-            self.audioport = ramdom_port
+        def __init__(self, vpt=102, apt=96):
+            self.videoport = ramdom_port()
+            self.audioport = ramdom_port()
             self.videopt = vpt
             self.audiopt = apt
             self.videocodec = "H246/90000"
@@ -87,15 +87,24 @@ class JanusSession:
             self.audiocodec = "opus/48000/2"
             self.avformat_v = "58.76.100"
             self.forward_host = "127.0.0.1"
+            self.folder = None
         
-        def create_sdp(self, room):
-            t = time.time()
-            name = str(room) + "_" + str(t) + ".sdp"
-            file_path = FILE_ROOT_PATH + name
-            f = open(file_path,"a+")
+        def create_sdp(self, path, name):
+            f = open(path,"a+")
             f.write(
                 "v=0\r\no=- 0 0 IN IP4 {host}\r\ns={name}\r\nc=IN IP4 {host}\r\nt=0 0\r\na=tool:libavformat {avformat_v}\r\nm=audio {audioport} RTP {audiopt}\r\na=rtpmap:{audiopt} {audiocodec}\r\nm=video {videoport} RTP/AVP {videopt}\r\na=rtpmap:{videopt} {videocodec}\r\na=fmtp:{videopt} {videofmpt}\r\n"
-                , format(name = name, host = self.forward_host, avformat_v = self.avformat_v, audioport = self.audioport, audiopt = self.audiopt, videoport = self.videoport, videopt = self.videopt, videofmpt = self.videofmpt))
+                .format(
+                    name = name,
+                    host = self.forward_host,
+                    avformat_v = self.avformat_v,
+                    audioport = self.audioport,
+                    audiopt = self.audiopt,
+                    videoport = self.videoport,
+                    videopt = self.videopt,
+                    videofmpt = self.videofmpt,
+                    audiocodec = self.audiocodec,
+                    videocodec=self.videocodec
+                    ))
             f.close()
 
     def __init__(self, room, pin, display, startedTime):
@@ -110,7 +119,17 @@ class JanusSession:
     def create_file_folder(self):
         dir = FILE_ROOT_PATH + str(self.room)
         Path(dir).mkdir(parents=True, exist_ok=True)
-        
+        self.folder = dir + "/"
+
+        print("\nroom folder created at: ", self.folder, "\n")
+
     # 创建 sdp file 给 rtp forwarding -> FFMpeg    
     def create_sdp(self):
-        self.forwarder.create_sdp(self.room)
+        assert self.folder
+
+        # t = time.time()
+        name = "janus.sdp"
+        file_path = self.folder + name
+        self.forwarder.create_sdp(path=file_path, name=name)
+
+        print("\nsdp file created at: ", file_path, "\n")
