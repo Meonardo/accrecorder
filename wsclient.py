@@ -157,7 +157,7 @@ class WebSocketClient:
             if events_type == "joined":
                 await self._handle_joind(data.data)
             elif events_type == "event" :
-                await self._hanlde_events(data.data)
+                await self._handle_events(data.data)
             elif events_type == "rtp_forward":
                 await self._handle_rtp_forward(data.data)
 
@@ -175,12 +175,14 @@ class WebSocketClient:
             print("id: %(id)s, display: %(display)s" % publisher)
             await self._start_recording(room=room, publisher=id)
 
-    async def _hanlde_events(self, data):
+    async def _handle_events(self, data):
         key = "leaving"
         if key in data:
             room = data["room"]
             publisher = data[key]
             await self._handle_leave(room, publisher)
+        elif "publishers" in data:
+            await self._handle_joind(data)
 
     async def _handle_leave(self, room, publisher):
         session = self._findsession(room, publisher)
