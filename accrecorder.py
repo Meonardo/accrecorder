@@ -37,7 +37,7 @@ async def start(request):
     if room.isdigit() == False:
         resp = json_response(False, -2, "Please input correct publisher identifier!")
 
-    success = await ws.startrecording(int(room), form["pin"], publisher)
+    success = await ws.start_recording(int(room), form["pin"], publisher)
     if success:
         resp = json_response(True, 0, "Start recording...")
     else:
@@ -61,7 +61,7 @@ async def stop(request):
     if room.isdigit() == False:
         resp = json_response(False, -2, "Please input correct publisher identifier!")
 
-    success = await ws.stoprecording(int(room), publisher)
+    success = await ws.stop_recording(int(room), publisher)
     if success:
         resp = json_response(True, 0, "Stop recording")
     else:
