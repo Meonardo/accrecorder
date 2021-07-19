@@ -10,7 +10,7 @@ import subprocess
 import signal
 import os
 
-from janus import Forwarding, JanusEvent, PluginData, Media, RecordFile, RecordSegment, SessionStatus, WebrtcUp, SlowLink, HangUp, Ack, JanusSession
+from janus import PluginData, Media, RecordFile, RecordSegment, RecordStatus, SessionStatus, WebrtcUp, SlowLink, HangUp, Ack, JanusSession
 from websockets.exceptions import ConnectionClosed
 
 # Random Transaction ID        
@@ -303,8 +303,15 @@ class WebSocketClient:
 
         # 保存文件信息
         segment = RecordSegment(name=name, begin_time=begin_time, room=session.room, publisher=session.publisher)
-        file = RecordFile(room=session.room, cam=segment)
-        self._files[session.room] = file
+        if session.room not in self._files:
+            file = RecordFile(room=session.room, cam=segment)
+            self._files[session.room] = file
+        else:
+            file:RecordFile = self._files[session.room]
+            if segment.is_screen:
+                file.screens.append(segment)
+            else:
+                file.cameras.append(segment)
         
     # 结束当前 publisher 的录制
     # 如果 publisherid = -99 则为停止所有的录制(下课)
