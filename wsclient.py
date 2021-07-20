@@ -10,7 +10,8 @@ import subprocess
 import signal
 import os
 
-from janus import PluginData, Media, RecordFile, RecordSegment, RecordStatus, SessionStatus, WebrtcUp, SlowLink, HangUp, Ack, JanusSession
+from janus import PluginData, Media, SessionStatus, WebrtcUp, SlowLink, HangUp, Ack, JanusSession
+from recorder import RecordFile, RecordSegment
 from websockets.exceptions import ConnectionClosed
 
 # Random Transaction ID        
@@ -20,7 +21,7 @@ def transaction_id():
 # static publisher IDs
 CAM1 = 1
 CAM2 = 2
-SCREEN = 9
+SCREEN = 99
 RECORDER = 911
 
 STOP_RECORDING = -99
@@ -197,14 +198,16 @@ class WebSocketClient:
 
         session:JanusSession = self._findsession(room, publisher)
         if session is not None:
-            if data["rtp_stream"]["audio_stream_id"] is not None:
-                session.update_forwarder(a_stream=data["rtp_stream"]["audio_stream_id"])
-            if data["rtp_stream"]["video_stream_id"] is not None:
-                session.update_forwarder(v_stream=data["rtp_stream"]["video_stream_id"])
-            self._launch_recorder(session)
+            if "rtp_stream" in data:
+                rtsp_stream = data["rtp_stream"]
+                if "audio_stream_id" in rtsp_stream:
+                    session.update_forwarder(a_stream=rtsp_stream["audio_stream_id"])
+                if "video_stream_id" in rtsp_stream:
+                    session.update_forwarder(v_stream=rtsp_stream["video_stream_id"])    
+                self._launch_recorder(session)
 
-            print("Now publisher {p} in the room {r} is forwarding".format(p=session.publisher, r=session.room))
-            session.status = SessionStatus.Forwarding
+                print("Now publisher {p} in the room {r} is forwarding".format(p=session.publisher, r=session.room))
+                session.status = SessionStatus.Forwarding
 
     async def loop(self):
         await self.connect()
@@ -260,7 +263,7 @@ class WebSocketClient:
             return
 
         session_key = str(room) + "-" + str(publisher)
-        start_time = time.time()
+        start_time = int(time.time())
         if self._is_forwarding(session_key) == False:
             session = JanusSession(room=room, publisher=publisher, startedTime=start_time)
             self._sessions[session_key] = session
@@ -292,12 +295,12 @@ class WebSocketClient:
 
     def _launch_recorder(self, session: JanusSession):
         folder = session.folder
-        begin_time = time.time()
+        begin_time = int(time.time())
         name = str(session.publisher) + "_" + str(begin_time) + ".ts"
         file_path = folder + name
         sdp = folder + session.forwarder.name
 
-        proc = subprocess.Popen(['ffmpeg', '-loglevel', 'info', '-hide_banner', '-protocol_whitelist', 'file,udp,rtp', '-i', sdp, '-c:v', 'copy', '-c:a', 'copy', file_path])
+        proc = subprocess.Popen(['ffmpeg', '-loglevel', 'info', '-hide_banner', '-protocol_whitelist', 'file,udp,rtp', '-i', sdp, '-c', 'copy', file_path])
         session.recorder_pid = proc.pid
 
         print("Now publisher {p} in the room {r} is recording".format(p=session.publisher, r=session.room))
@@ -322,7 +325,7 @@ class WebSocketClient:
 
         publisher = int(publisherid)
         if publisher == STOP_RECORDING:
-            await self._stop_all_session(room)
+            await self._stop_all_sessions(room)
             self._processing_file(room)
             return True
         else:
@@ -339,7 +342,7 @@ class WebSocketClient:
             return self._sessions[session_key]
         return None
     
-    async def _stop_all_session(self, room):
+    async def _stop_all_sessions(self, room):
         p = [CAM1, CAM2, SCREEN]
         def l(p):
             return self._findsession(room=room, publisher=p)
@@ -379,7 +382,7 @@ class WebSocketClient:
 
         # 更新文件信息
         file: RecordFile = self._files[room]
-        end_time = time.time()
+        end_time = int(time.time())
         if file is not None:
             if int(publisher) == SCREEN:
                 segment: RecordSegment = file.screens[-1]
@@ -390,18 +393,8 @@ class WebSocketClient:
         
     def _processing_file(self, room):
         print("Starting processing all the files from room = ", room)
-        file: RecordFile = self._files[room]
-        if file is not None:
-            self._join_cameras(file)
-    
-    # 将所有的摄像头文件拼接
-    def _join_cameras(self, file:RecordFile):
-        print("Starting join all the camera files")
-    
-    # 将合并的摄像头文件根据屏幕文件进行分段
-    def _separate_camera_files(self, cam_files, screen_files):
-        print("Starting separating all the camera files from screen files")
 
-    # [PiP]形式融合屏幕和摄像头画面
-    def _merge(self, file:RecordFile):
-        print("Starting merge all the camera files")
+        if room in self._files:
+            file: RecordFile = self._files[room]
+            if file is not None:
+                file.process()

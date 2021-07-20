@@ -1,7 +1,6 @@
 from logging import raiseExceptions
 import attr
 import random
-import time
 import os
 from pathlib import Path
 from enum import Enum
@@ -59,7 +58,7 @@ class SessionStatus(Enum):
     Failed = -1
 
 # 屏幕的ID
-SCREEN = 9
+SCREEN = 99
 # 端口管理
 PORTS = []
 # 测试
@@ -93,20 +92,33 @@ class Forwarding:
         self.name = name
 
         f = open(path,"a+")
-        f.write(
-            "v=0\r\no=- 0 0 IN IP4 {host}\r\ns={name}\r\nc=IN IP4 {host}\r\nt=0 0\r\na=tool:libavformat {avformat_v}\r\nm=audio {audioport} RTP {audiopt}\r\na=rtpmap:{audiopt} {audiocodec}\r\nm=video {videoport} RTP/AVP {videopt}\r\na=rtpmap:{videopt} {videocodec}\r\na=fmtp:{videopt} {videofmpt}\r\n"
-            .format(
-                name = name,
-                host = self.forward_host,
-                avformat_v = self.avformat_v,
-                audioport = self.audioport,
-                audiopt = self.audiopt,
-                videoport = self.videoport,
-                videopt = self.videopt,
-                videofmpt = self.videofmpt,
-                audiocodec = self.audiocodec,
-                videocodec = self.videocodec
-                ))
+        if self.audioport == -1:
+            f.write(
+                "v=0\r\no=- 0 0 IN IP4 {host}\r\ns={name}\r\nc=IN IP4 {host}\r\nt=0 0\r\na=tool:libavformat {avformat_v}\r\nm=video {videoport} RTP/AVP {videopt}\r\na=rtpmap:{videopt} {videocodec}\r\na=fmtp:{videopt} {videofmpt}\r\n"
+                .format(
+                    name = name,
+                    host = self.forward_host,
+                    avformat_v = self.avformat_v,
+                    videoport = self.videoport,
+                    videopt = self.videopt,
+                    videofmpt = self.videofmpt,
+                    videocodec = self.videocodec
+                    ))
+        else:
+            f.write(
+                "v=0\r\no=- 0 0 IN IP4 {host}\r\ns={name}\r\nc=IN IP4 {host}\r\nt=0 0\r\na=tool:libavformat {avformat_v}\r\nm=audio {audioport} RTP {audiopt}\r\na=rtpmap:{audiopt} {audiocodec}\r\nm=video {videoport} RTP/AVP {videopt}\r\na=rtpmap:{videopt} {videocodec}\r\na=fmtp:{videopt} {videofmpt}\r\n"
+                .format(
+                    name = name,
+                    host = self.forward_host,
+                    avformat_v = self.avformat_v,
+                    audioport = self.audioport,
+                    audiopt = self.audiopt,
+                    videoport = self.videoport,
+                    videopt = self.videopt,
+                    videofmpt = self.videofmpt,
+                    audiocodec = self.audiocodec,
+                    videocodec = self.videocodec
+                    ))
         f.close()
 
 class JanusSession:
@@ -131,7 +143,10 @@ class JanusSession:
     def create_sdp(self):
         assert self.folder
 
-        self.forwarder = Forwarding(vp=ramdom_port(), ap=ramdom_port())
+        if self.publisher == SCREEN:
+            self.forwarder = Forwarding(vp=ramdom_port(), ap=-1)
+        else:
+            self.forwarder = Forwarding(vp=ramdom_port(), ap=ramdom_port())
 
         # t = time.time()
         name = "{p}_janus.sdp".format(p=self.publisher)
@@ -153,6 +168,14 @@ class JanusSession:
             self.forwarder.audio_stream_id = a_stream
 
     def forwarding_obj(self):
+        if self.publisher == SCREEN:
+            return {
+            "host": self.forwarder.forward_host,
+            "video_port":self.forwarder.videoport, 
+            "video_pt":self.forwarder.videopt, 
+            "publisher_id": int(self.publisher), 
+            "room":self.room,
+        }
         return {
             "host": self.forwarder.forward_host,
             "audio_port":self.forwarder.audioport,
@@ -164,6 +187,15 @@ class JanusSession:
         }
 
     def stop_forwarding_obj(self, stream):
+        if self.publisher == SCREEN:
+            return {
+            "stream_id": int(stream),
+            "video_port":self.forwarder.videoport, 
+            "audio_pt":self.forwarder.audiopt, 
+            "video_pt":self.forwarder.videopt, 
+            "publisher_id": int(self.publisher), 
+            "room":self.room,
+        }
         return {
             "stream_id": int(stream),
             "audio_port":self.forwarder.audioport,
@@ -173,30 +205,3 @@ class JanusSession:
             "publisher_id": int(self.publisher), 
             "room":self.room,
         }
-
-class RecordStatus(Enum):
-    Defalut = 1
-    Started = 2
-    Processing = 10
-    Finished = 19
-    Uploading = 20
-    Uploaded = 29
-
-    Failed = -1
-
-class RecordSegment:
-    def __init__(self, name, room, publisher, begin_time, end_time=None):
-        self.name = name
-        self.room = room
-        self.publisher = publisher
-        self.begin_time = begin_time
-        self.end_time = end_time
-        self.folder = FILE_ROOT_PATH + str(self.room)
-        self.is_screen = int(publisher) == SCREEN
-
-class RecordFile:
-    def __init__(self, room, cam:RecordSegment, screen:RecordSegment=None):
-        self.room = room
-        self.cameras = [cam]
-        self.screens = [screen]
-        self.status:RecordStatus = RecordStatus.Defalut
