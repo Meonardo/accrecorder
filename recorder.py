@@ -6,6 +6,7 @@ import signal
 from enum import Enum
 from typing import Iterator
 from janus import FILE_ROOT_PATH, SCREEN
+from pathlib import Path
 
 class RecordStatus(Enum):
     Defalut = 1
@@ -23,6 +24,7 @@ class MergeFile:
         self.end = end
         self.merge = merge
         self.name = None
+        self.merged_name = None
 
 class RecordSegment:
     def __init__(self, name, room, publisher, begin_time, end_time=None):
@@ -43,6 +45,7 @@ class RecordFile:
         self.folder = FILE_ROOT_PATH + str(self.room)
         self._join_file_path = None
         self._file_cuts = None
+        self._cuts_path = None
 
     def process(self):
         self.screens = list(filter(None, self.screens))
@@ -79,7 +82,8 @@ class RecordFile:
         f.close()
 
         self._join_file_path = self.folder + "/joind.ts"
-        subprocess.Popen(['ffmpeg', '-f', 'concat', '-safe', '0', '-i', cmd_file_path, '-c', 'copy', self._join_file_path])
+        p = subprocess.Popen(['ffmpeg', '-f', 'concat', '-safe', '0', '-i', cmd_file_path, '-c', 'copy', self._join_file_path])
+        p.wait()
 
         self.status = RecordStatus.Processing
     
@@ -87,30 +91,32 @@ class RecordFile:
     def _separate_files(self):
         cuts = self._cal_cuts()
         self._file_cuts = cuts
-
-        print("File will be cut to: \n", cuts)
         
         print("--------CUT [START]--------")
 
-        index = 0
-        segments = []
-        for cut in cuts:
-            cut.name = "cut_{i}".format(i=index)
-            segments.append(cut.begin)
-            index += 1
-        
-        subprocess.Popen(['ffmpeg', '-i', self._join_file_path, '-c', 'copy', '-f', 'segment', '-segment_times', str.join(",", segments), '{f}/cut_%d.mp4'.format(f=self.folder)])
+        self._cuts_path = self.folder + "/cuts"
+        Path(self._cuts_path).mkdir(parents=True, exist_ok=True)
 
+        index = 0
+        for cut in cuts:
+            cut.name = "cut_{i}.ts".format(i=index)
+            p = subprocess.run("ffmpeg -i {source} -ss {s} -to {e} -async 1 {t}".format(
+                s=cut.begin, 
+                source=self._join_file_path, 
+                e=cut.end, 
+                t=self._cuts_path+"/"+cut.name), shell=True)
+            index += 1
+   
         print("--------CUT [END]--------")
 
     # 计算分段
     def _cal_cuts(self):
         begin = self.cameras[0].begin_time
-        end = self.cameras[0].end_time
+        end = self.cameras[-1].end_time
 
         def ti(segment:RecordSegment):
             return MergeFile(begin=segment.begin_time-begin, end=segment.end_time-begin, merge=True)
-        merges = list(map(ti, filter(None, self.screens)))
+        merges = list(map(ti, self.screens))
 
         first = MergeFile(begin=0, end=merges[0].begin, merge=False)
         cuts = [first]
@@ -118,13 +124,14 @@ class RecordFile:
         for index in range(len(merges)):
             cur = merges[index]
             if index == 0:
+                cuts.append(cur)
                 continue
             else:
                 pre = merges[index-1]
                 cuts.append(MergeFile(begin=pre.end, end=cur.begin, merge=False))
-            cuts.append(cur)
+                cuts.append(cur)
 
-        cuts.append(MergeFile(begin=merges[-1].end, end=end, merge=False))
+        cuts.append(MergeFile(begin=merges[-1].end, end=end-begin, merge=False))
 
         return cuts
 
@@ -132,6 +139,62 @@ class RecordFile:
     def _merge(self):
         print("Starting merge all the camera & screen files")
 
+        filtered = list(filter(lambda x: x.merge, self._file_cuts))
+
+        assert len(filtered) == len(self.screens)
+
+        procs = []
+        for index in range(len(self.screens)):
+            screen_target = "{f}/{n}".format(f=self.folder, n=self.screens[index].name)
+            cut:MergeFile = filtered[index]
+            overlay_target = "{f}/{n}".format(f=self._cuts_path, n=cut.name)
+            cut.merged_name = "merged_{n}.ts".format(n=index)
+            merged_path = "{f}/{n}".format(f=self._cuts_path, n=cut.merged_name)
+
+            p = subprocess.Popen(['ffmpeg', 
+            '-i', screen_target,
+            '-i', overlay_target,
+            '-filter_complex', '[1]scale=iw/4:ih/4[pip];[0][pip] overlay=main_w-overlay_w-10:main_h-overlay_h-10',
+            merged_path])
+
+            procs.append(p)
+
+        r = [p.wait() for p in procs]
+        print(r)      
+        print("\n\n***********\nMerge Done!\n***********\n\n")
+
     # 拼接所有文件
     def _join_all_files(self):
         print("Starting join all the files to single mp4 file")
+
+        file_path = self._cuts_path
+
+        def l(file:MergeFile):
+            name = file.name
+            if file.merge:
+                name = file.merged_name
+            return "file " + file_path + "/" + name
+
+        file_names = list(map(l, self._file_cuts))
+        contents = str.join("\r\n", file_names)
+
+        cmd_file_path =  self.folder + "/join_merged.txt"
+
+        # 删除原来有的
+        if os.path.isfile(cmd_file_path):
+            print("File exits: ", cmd_file_path, " removing now...")
+            os.remove(cmd_file_path)
+
+        f = open(cmd_file_path, "a+")
+        f.write(contents)
+        f.close()
+
+        target = self.folder + "/join_merged.ts"
+        p = subprocess.Popen(['ffmpeg', '-f', 'concat', '-safe', '0', '-i', cmd_file_path, '-c', 'copy', target])
+        p.wait()
+
+        self.status = RecordStatus.Finished
+
+        print("\n\n***********\nDone! file at path: ", target, "\n***********\n\n")
+
+        

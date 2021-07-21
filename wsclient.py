@@ -21,7 +21,7 @@ def transaction_id():
 # static publisher IDs
 CAM1 = 1
 CAM2 = 2
-SCREEN = 99
+SCREEN = 9
 RECORDER = 911
 
 STOP_RECORDING = -99

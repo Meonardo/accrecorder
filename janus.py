@@ -58,7 +58,7 @@ class SessionStatus(Enum):
     Failed = -1
 
 # 屏幕的ID
-SCREEN = 99
+SCREEN = 9
 # 端口管理
 PORTS = []
 # 测试
