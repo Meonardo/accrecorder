@@ -8,6 +8,8 @@ from typing import Iterator
 from janus import FILE_ROOT_PATH, SCREEN
 from pathlib import Path
 
+TIME_THRESHOLD = 3
+
 class RecordStatus(Enum):
     Defalut = 1
     Started = 2
@@ -47,6 +49,10 @@ class RecordFile:
         self._file_cuts = None
         self._cuts_path = None
 
+        # 屏幕和Cam同时开始/结束
+        self.start_simultaneously = False
+        self.stop_simultaneously = False
+
     def process(self):
         self.screens = list(filter(None, self.screens))
         self.cameras = list(filter(None, self.cameras))
@@ -55,13 +61,32 @@ class RecordFile:
         self._join_cameras()
         # 裁剪与屏幕对应的文件
         if len(self.screens) > 0:
-            self._separate_files()
-            # 合并画中画
-            self._merge()
-            # 拼接
-            self._join_all_files()
+            # 预先处理
+            self._process_time()
+            if len(self.screens) == 1 and len(self.cameras) == 1 and self.start_simultaneously and self.stop_simultaneously:
+                self._merge()
+                print("\n\n***********\nDone! file at path: {f}/join_merged.ts".format(self.folder), "\n***********\n\n")
+            else:
+                self._separate_files()
+                # 合并画中画
+                self._merge()
+                # 拼接
+                self._join_all_files()
         else:
-            print("*******Done.*******")
+            print("\n\n***********\nDone! file at path: ", self._join_file_path, "\n***********\n\n")
+    
+    # 判断是否同时开始或者同时结束
+    def _process_time(self):
+        begin = self.cameras[0].begin_time
+        screen_s = self.screens[0].begin_time
+        end = self.cameras[-1].end_time
+        screen_e = self.screens[-1].end_time
+
+        # 如果开始时间相近, 阈值为3, 认为同时开始
+        if abs(begin - screen_s) <= TIME_THRESHOLD:
+            self.start_simultaneously = True
+        if abs(end - screen_e) <= TIME_THRESHOLD:
+            self.stop_simultaneously = True
 
     # 将所有的摄像头文件拼接
     def _join_cameras(self):
@@ -100,7 +125,7 @@ class RecordFile:
         index = 0
         for cut in cuts:
             cut.name = "cut_{i}.ts".format(i=index)
-            p = subprocess.run("ffmpeg -i {source} -ss {s} -to {e} -async 1 {t}".format(
+            p = subprocess.run("ffmpeg -i {source} -ss {s} -to {e} -c:v libx264 -crf 17 -c:a copy -preset fast {t}".format(
                 s=cut.begin, 
                 source=self._join_file_path, 
                 e=cut.end, 
@@ -118,12 +143,12 @@ class RecordFile:
             return MergeFile(begin=segment.begin_time-begin, end=segment.end_time-begin, merge=True)
         merges = list(map(ti, self.screens))
 
-        first = MergeFile(begin=0, end=merges[0].begin, merge=False)
+        first = MergeFile(begin=0, end=merges[0].begin, merge=self.start_simultaneously)
         cuts = [first]
 
         for index in range(len(merges)):
             cur = merges[index]
-            if index == 0:
+            if index == 0 and self.start_simultaneously == False:
                 cuts.append(cur)
                 continue
             else:
@@ -131,36 +156,49 @@ class RecordFile:
                 cuts.append(MergeFile(begin=pre.end, end=cur.begin, merge=False))
                 cuts.append(cur)
 
-        cuts.append(MergeFile(begin=merges[-1].end, end=end-begin, merge=False))
+        if self.stop_simultaneously == False:
+            cuts.append(MergeFile(begin=merges[-1].end, end=end-begin, merge=False))
 
         return cuts
 
     # [PiP]形式融合屏幕和摄像头画面
-    def _merge(self):
+    def _merge(self, single_segment=False):
         print("Starting merge all the camera & screen files")
 
-        filtered = list(filter(lambda x: x.merge, self._file_cuts))
-
-        assert len(filtered) == len(self.screens)
-
-        procs = []
-        for index in range(len(self.screens)):
-            screen_target = "{f}/{n}".format(f=self.folder, n=self.screens[index].name)
-            cut:MergeFile = filtered[index]
-            overlay_target = "{f}/{n}".format(f=self._cuts_path, n=cut.name)
-            cut.merged_name = "merged_{n}.ts".format(n=index)
-            merged_path = "{f}/{n}".format(f=self._cuts_path, n=cut.merged_name)
-
+        if single_segment:
+            screen_target = "{f}/{n}".format(f=self.folder, n=self.screens[0].name)
+            overlay_target = "{f}/{n}".format(f=self.folder, n=self.cameras[0].name)
+            merged_path = "{f}/{n}".format(f=self.folder, n="/join_merged.ts")
             p = subprocess.Popen(['ffmpeg', 
-            '-i', screen_target,
-            '-i', overlay_target,
-            '-filter_complex', '[1]scale=iw/4:ih/4[pip];[0][pip] overlay=main_w-overlay_w-10:main_h-overlay_h-10',
-            merged_path])
+                '-i', screen_target,
+                '-i', overlay_target,
+                '-filter_complex', '[1]scale=iw/4:ih/4[pip];[0][pip] overlay=main_w-overlay_w-10:main_h-overlay_h-10', '-codec:v', 'libx264', '-crf', '17', '-preset', 'fast', '-codec:a', 'copy',
+                merged_path])
 
-            procs.append(p)
+            p.wait()
+        else:
+            filtered = list(filter(lambda x: x.merge, self._file_cuts))
 
-        r = [p.wait() for p in procs]
-        print(r)      
+            assert len(filtered) == len(self.screens)
+
+            procs = []
+            for index in range(len(self.screens)):
+                screen_target = "{f}/{n}".format(f=self.folder, n=self.screens[index].name)
+                cut:MergeFile = filtered[index]
+                overlay_target = "{f}/{n}".format(f=self._cuts_path, n=cut.name)
+                cut.merged_name = "merged_{n}.ts".format(n=index)
+                merged_path = "{f}/{n}".format(f=self._cuts_path, n=cut.merged_name)
+
+                p = subprocess.Popen(['ffmpeg', 
+                '-i', screen_target,
+                '-i', overlay_target,
+                '-filter_complex', '[1]scale=iw/4:ih/4[pip];[0][pip] overlay=main_w-overlay_w-10:main_h-overlay_h-10', '-codec:v', 'libx264', '-crf', '17', '-preset', 'fast', '-codec:a', 'copy',
+                merged_path])
+
+                procs.append(p)
+
+            r = [p.wait() for p in procs]
+            print(r)      
         print("\n\n***********\nMerge Done!\n***********\n\n")
 
     # 拼接所有文件

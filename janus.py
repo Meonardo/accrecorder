@@ -1,3 +1,4 @@
+import asyncio
 from logging import raiseExceptions
 import attr
 import random
@@ -47,8 +48,18 @@ class Jsep:
     sdp = attr.ib()
     type = attr.ib(validator=attr.validators.in_(["offer", "pranswer", "answer", "rollback"]))
 
+class JanusSessionStatus(Enum):
+    Defalut = 1
+    Starting = 2
+    Forwarding = 3
+    Recording = 4
+    Stopped = 5
+    Processing = 6
+    Finished = 7
 
-class SessionStatus(Enum):
+    Failed = -1
+
+class RecordSessionStatus(Enum):
     Defalut = 1
     Started = 2
     Forwarding = 3
@@ -72,8 +83,18 @@ def ramdom_port():
     else:
         ramdom_port
 
+class JanusSession:
+    def __init__(self, room, pin, display) -> None:
+        self.room = room
+        self.pin = pin
+        self.display = display
+        self.session = None
+        self.handle = None
+        self.status:JanusSessionStatus = JanusSessionStatus.Defalut
+        self.loop = None
+
 #RTP forwarding 参数
-class Forwarding:
+class JanusRTPForwarder:
     def __init__(self, vp, ap, vpt=102, apt=96):
         self.videoport = vp
         self.audioport = ap
@@ -121,13 +142,14 @@ class Forwarding:
                     ))
         f.close()
 
-class JanusSession:
+class RecordSession:
     def __init__(self, room, publisher, startedTime):
         self.room = room
         self.publisher = publisher
         self.startedTime = startedTime
-        self.status = SessionStatus.Defalut
-        self.forwarder:Forwarding = None
+
+        self.status = RecordSessionStatus.Defalut
+        self.forwarder:JanusRTPForwarder = None
         self.folder = None
         self.recorder_pid = None
 
@@ -144,9 +166,9 @@ class JanusSession:
         assert self.folder
 
         if self.publisher == SCREEN:
-            self.forwarder = Forwarding(vp=ramdom_port(), ap=-1)
+            self.forwarder = JanusRTPForwarder(vp=ramdom_port(), ap=-1)
         else:
-            self.forwarder = Forwarding(vp=ramdom_port(), ap=ramdom_port())
+            self.forwarder = JanusRTPForwarder(vp=ramdom_port(), ap=ramdom_port())
 
         # t = time.time()
         name = "{p}_janus.sdp".format(p=self.publisher)
@@ -205,3 +227,9 @@ class JanusSession:
             "publisher_id": int(self.publisher), 
             "room":self.room,
         }
+    
+    # 回收本机的 RTP forwarding listen port
+    def clean_ports(self):
+        if self.forwarder.audioport is not None:
+            PORTS.remove(self.forwarder.audioport)
+        PORTS.remove(self.forwarder.videoport)

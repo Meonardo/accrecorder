@@ -33,15 +33,15 @@ async def start(request):
     if room.isdigit() == False:
         resp = json_response(False, -1, "Please input correct Room number!")
 
-    publisher = form["publisher"]
-    if room.isdigit() == False:
-        resp = json_response(False, -2, "Please input correct publisher identifier!")
+    # publisher = form["publisher"]
+    # if room.isdigit() == False:
+    #     resp = json_response(False, -2, "Please input correct publisher identifier!")
 
-    success = await ws.start_recording(int(room), form["pin"], publisher)
+    success = await ws.start_recording(int(room), form["pin"])
     if success:
         resp = json_response(True, 0, "Start recording...")
     else:
-        resp = json_response(False, -3, "Current publisher {p} is recording".format(p=publisher))
+        resp = json_response(False, -3, "Current room {r} is recording".format(r=room))
 
     print("[END]")
     return web.json_response(resp)
@@ -57,11 +57,11 @@ async def stop(request):
     if room.isdigit() == False:
         resp = json_response(False, -1, "Please input correct Room number!")
 
-    publisher = form["publisher"]
-    if room.isdigit() == False:
-        resp = json_response(False, -2, "Please input correct publisher identifier!")
+    # publisher = form["publisher"]
+    # if room.isdigit() == False:
+    #     resp = json_response(False, -2, "Please input correct publisher identifier!")
 
-    success = await ws.stop_recording(int(room), publisher)
+    success = await ws.stop_recording(int(room))
     if success:
         resp = json_response(True, 0, "Stop recording")
     else:
