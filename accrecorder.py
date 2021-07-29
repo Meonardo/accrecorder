@@ -10,7 +10,6 @@ from aiohttp import web
 from wsclient import WebSocketClient
 
 ROOT = os.path.dirname(__file__)
-ws: WebSocketClient = None
                       
 # common response   
 def json_response(success, code, data):
