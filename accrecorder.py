@@ -1,11 +1,8 @@
 #!/usr/bin/python
 import os
 import argparse
-import json
 import asyncio
 
-from os import curdir, sep
-from collections import namedtuple
 from aiohttp import web
 from wsclient import WebSocketClient
 
@@ -74,6 +71,40 @@ async def stop(request):
     return web.json_response(resp)
 
 
+async def recording_screen(request):
+    form = await request.post()
+    print(u"[START]:Incoming Request: {r}, form: {f}".format(r=request, f=form))
+
+    resp = json_response(False, 0, "default response")
+
+    room = form["room"]
+    if not room.isdigit():
+        resp = json_response(False, -1, "Please input correct Room number!")
+    # 1 start recording screen, 2 stop recording screen, other commands are invalidate
+    cmd = form["cmd"]
+    if not cmd.isdigit():
+        resp = json_response(False, -4, "Please input correct command!")
+    cmd = int(cmd)
+    if 0 < cmd < 3:
+        if cmd == 1:
+            success = await ws.start_recording_screen(int(room))
+            if not success:
+                resp = json_response(False, -4, "Current screen is recording!")
+            else:
+                resp = json_response(True, 0, "Screen start recording")
+        else:
+            success = await ws.stop_recording_screen(int(room))
+            if not success:
+                resp = json_response(False, -4, "Current screen is NOT recording!")
+            else:
+                resp = json_response(True, 0, "Screen stop recording")
+    else:
+        resp = json_response(False, -5, "Please input invalid command, 1 to start recording screen and 2 to stop "
+                                        "recording screen")
+    print("[END]")
+    return web.json_response(resp)
+
+
 async def on_shutdown(app):
     print("Web server is shutting down...")
     # close ws
@@ -99,6 +130,7 @@ if __name__ == "__main__":
 
     app.router.add_post("/record/start", start)
     app.router.add_post("/record/stop", stop)
+    app.router.add_post("/record/screen", recording_screen)
 
     ws = WebSocketClient(args.janus)
     loop = asyncio.get_event_loop()

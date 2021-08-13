@@ -28,8 +28,6 @@ CAM2 = 2
 SCREEN = 9
 RECORDER = 911
 
-STOP_RECORDING = -99
-
 
 @attr.s
 class WebSocketClient:
@@ -120,9 +118,9 @@ class WebSocketClient:
         elif transaction == "Attach":
             session.handle = raw["data"]["id"]
             # join the room
-            joinmessage = {"request": "join", "ptype": "publisher", "room": int(room), "pin": str(session.pin),
-                           "display": session.display, "id": RECORDER}
-            await self._sendmessage(joinmessage, room=room)
+            join_message = {"request": "join", "ptype": "publisher", "room": int(room), "pin": str(session.pin),
+                            "display": session.display, "id": RECORDER}
+            await self._sendmessage(join_message, room=room)
 
     async def _recv(self):
         if len(self._messages) > 0:
@@ -184,25 +182,25 @@ class WebSocketClient:
         if data.data is not None:
             events_type = data.data["videoroom"]
             if events_type == "joined":
-                await self._handle_joind(data.data)
+                await self._handle_joined(data.data)
             elif events_type == "event":
                 await self._handle_events(data.data)
             elif events_type == "rtp_forward":
                 await self._handle_rtp_forward(data.data)
 
-    async def _handle_joind(self, data):
+    async def _handle_joined(self, data):
         room = int(data["room"])
         assert room
 
         publishers = data["publishers"]
-        print("new publishes in the room: \n")
-
-        for publisher in publishers:
-            id = publisher["id"]
-            assert id
-
-            print("id: %(id)s, display: %(display)s" % publisher)
-            await self._start_recording(room=room, publisher=id)
+        print("publishes in the room: \n", publishers)
+        self._update_publishers(room, publishers)
+        sessions = self._active_sessions(room)
+        for session in sessions:
+            if session.publisher == SCREEN and session.status == RecordSessionStatus.Forwarding:
+                continue
+            # 开启转发
+            await self._forward_rtp(session)
 
     async def _handle_events(self, data):
         key = "leaving"
@@ -211,10 +209,10 @@ class WebSocketClient:
             publisher = data[key]
             await self._handle_leave(room, publisher)
         elif "publishers" in data:
-            await self._handle_joind(data)
+            await self._handle_joined(data)
 
     async def _handle_leave(self, room, publisher):
-        session = self._find_recordsession(room, publisher)
+        session = self._find_record_session(room, publisher)
         if session is not None:
             self._stop_forwarding(session)
 
@@ -224,7 +222,7 @@ class WebSocketClient:
         publisher = int(data["publisher_id"])
         assert publisher
 
-        session: RecordSession = self._find_recordsession(room, publisher)
+        session: RecordSession = self._find_record_session(room, publisher)
         if session is not None:
             if "rtp_stream" in data:
                 rtsp_stream = data["rtp_stream"]
@@ -232,10 +230,11 @@ class WebSocketClient:
                     session.update_forwarder(a_stream=rtsp_stream["audio_stream_id"])
                 if "video_stream_id" in rtsp_stream:
                     session.update_forwarder(v_stream=rtsp_stream["video_stream_id"])
-                self._launch_recorder(session)
 
                 print("Now publisher {p} in the room {r} is forwarding".format(p=session.publisher, r=session.room))
                 session.status = RecordSessionStatus.Forwarding
+                # update forward publishers & record
+                self._update_forwarding(room)
 
     async def loop(self):
         await self.connect()
@@ -258,7 +257,7 @@ class WebSocketClient:
                 elif not isinstance(msg, Ack):
                     print(msg)
             except (KeyboardInterrupt, ConnectionClosed):
-                return
+                break
 
     # 是否已经加入了房间
     def _is_forwarding(self, key):
@@ -266,7 +265,7 @@ class WebSocketClient:
             return True
         return False
 
-    # 当 publisherid = 0 开始初始录制服务
+    # 开始初始录制服务
     async def start_recording(self, room, pin):
         display = "record_" + str(room)
 
@@ -284,30 +283,23 @@ class WebSocketClient:
 
         loop = asyncio.get_event_loop()
         loop.create_task(self._keepalive(room=room))
-        session.loop = loop
 
         return True
 
-    # 录制某个 publisher 
-    async def _start_recording(self, room, publisher):
-        if publisher not in [CAM1, CAM2, SCREEN]:
-            return
+    def _update_publishers(self, room, publishers):
+        for p in publishers:
+            publisher = p["id"]
+            if publisher not in [CAM1, CAM2, SCREEN]:
+                continue
+            session_key = str(room) + "-" + str(publisher)
+            start_time = int(time.time())
+            if not self._is_forwarding(session_key):
+                session = RecordSession(room=room, publisher=publisher, started_time=start_time)
+                self._record_sessions[session_key] = session
 
-        session_key = str(room) + "-" + str(publisher)
-        start_time = int(time.time())
-        if not self._is_forwarding(session_key):
-            session = RecordSession(room=room, publisher=publisher, startedTime=start_time)
-            self._record_sessions[session_key] = session
-            session.status = RecordSessionStatus.Started
-
-            # preparations: 
-            self._create_folders(session)
-            self._create_sdp(session)
-
-            # 开启转发
-            await self._forward_rtp(session)
-        else:
-            print("The publisher {p} in the room {r} is forwarding".format(p=publisher, r=room))
+                # preparations:
+                self._create_folders(session)
+                self._create_sdp(session)
 
     @staticmethod
     def _create_folders(session: RecordSession):
@@ -322,11 +314,75 @@ class WebSocketClient:
     # forwarding_rtp to local server
     async def _forward_rtp(self, session: RecordSession):
         forwarding_obj = session.forwarding_obj()
-        forwardmessage = {"request": "rtp_forward", "secret": "adminpwd"}.copy()
-        forwardmessage.update(forwarding_obj)
-        await self._sendmessage(forwardmessage, room=session.room)
+        forward_message = {"request": "rtp_forward", "secret": "adminpwd"}.copy()
+        forward_message.update(forwarding_obj)
+        await self._sendmessage(forward_message, room=session.room)
 
-    def _launch_recorder(self, session: RecordSession):
+    def _update_forwarding(self, room):
+        sessions = self._active_sessions(room)
+        forwarding_sessions = []
+        for session in sessions:
+            if session.status == RecordSessionStatus.Forwarding:
+                forwarding_sessions.append(session)
+        if len(forwarding_sessions) == len(sessions):
+            self._launch_recorder(room, forwarding_sessions)
+
+    def _launch_recorder(self, room, sessions: [RecordSession]):
+        janus: JanusSession = self._sessions[room]
+        if len(sessions) > 1 and janus.recording_screen:
+            screen = self._find_record_session(room=room, publisher=SCREEN)
+            sessions.remove(screen)
+            cam = sessions[0]
+            self._record_screen_cam(screen=screen, cam=cam)
+        else:
+            self._record_cam(session=sessions[0])
+        janus_session: JanusSession = self._sessions[room]
+        if janus_session is not None:
+            janus_session.status = JanusSessionStatus.Recording
+
+    def _record_screen_cam(self, screen: RecordSession, cam: RecordSession):
+        janus_session: JanusSession = self._sessions[screen.room]
+        if janus_session is not None:
+            janus_session.recording_screen = True
+
+        folder = screen.folder
+        begin_time = int(time.time())
+        name = str(screen.publisher) + "_" + str(begin_time) + ".ts"
+        file_path = folder + name
+        sdp_screen = folder + screen.forwarder.name
+        sdp_cam = folder + cam.forwarder.name
+
+        proc = subprocess.Popen(['ffmpeg',
+                                 '-protocol_whitelist', 'file,udp,rtp',
+                                 '-i', sdp_screen,
+                                 '-protocol_whitelist', 'file,udp,rtp',
+                                 '-i', sdp_cam,
+                                 '-filter_complex',
+                                 '[1]scale=iw/3:ih/3[pip];[0][pip] overlay=main_w-overlay_w-20:main_h-overlay_h-20',
+                                 '-codec:v', 'libx264',
+                                 '-preset', 'ultrafast',
+                                 '-tune', 'zerolatency',
+                                 '-r', '30',
+                                 '-b:v', '5M',
+                                 '-crf', '18',
+                                 '-codec:a', 'copy',
+                                 file_path])
+        screen.recorder_pid = proc.pid
+
+        print("Now publisher {p} in the room {r} is recording".format(p=screen.publisher, r=screen.room))
+        screen.status = RecordSessionStatus.Recording
+        cam.status = RecordSessionStatus.Recording
+
+        # 保存文件信息
+        segment = RecordSegment(name=name, begin_time=begin_time, room=screen.room, publisher=screen.publisher)
+        if screen.room not in self._files:
+            file = RecordFile(room=screen.room, file=segment)
+            self._files[screen.room] = file
+        else:
+            file: RecordFile = self._files[screen.room]
+            file.files.append(segment)
+
+    def _record_cam(self, session: RecordSession):
         folder = session.folder
         begin_time = int(time.time())
         name = str(session.publisher) + "_" + str(begin_time) + ".ts"
@@ -344,14 +400,39 @@ class WebSocketClient:
         # 保存文件信息
         segment = RecordSegment(name=name, begin_time=begin_time, room=session.room, publisher=session.publisher)
         if session.room not in self._files:
-            file = RecordFile(room=session.room, cam=segment)
+            file = RecordFile(room=session.room, file=segment)
             self._files[session.room] = file
         else:
             file: RecordFile = self._files[session.room]
-            if segment.is_screen:
-                file.screens.append(segment)
-            else:
-                file.cameras.append(segment)
+            file.files.append(segment)
+
+    def _find_record_session(self, room, publisher):
+        session_key = str(room) + "-" + str(publisher)
+        if session_key in self._record_sessions:
+            return self._record_sessions[session_key]
+        return None
+
+    def _active_sessions(self, room):
+        p = [CAM1, CAM2, SCREEN]
+
+        def l(p):
+            return self._find_record_session(room=room, publisher=p)
+
+        sessions = list(map(l, p))
+        sessions = list(filter(None, sessions))
+        return sessions
+
+    # 正在转发且录制的摄像头
+    def _recording_cam(self, room):
+        p = [CAM1, CAM2]
+
+        def l(p):
+            return self._find_record_session(room=room, publisher=p)
+
+        sessions = list(map(l, p))
+        sessions = filter(None, sessions)
+        sessions = list(filter(lambda x: x.status == RecordSessionStatus.Recording, sessions))
+        return sessions[0]
 
     # 结束当前房间录制
     async def stop_recording(self, room):
@@ -361,30 +442,14 @@ class WebSocketClient:
         self._processing_file(room)
         return True
 
-    def _find_recordsession(self, room, publisher):
-        session_key = str(room) + "-" + str(publisher)
-        if session_key in self._record_sessions:
-            return self._record_sessions[session_key]
-        return None
-
     async def _stop_all_sessions(self, room):
-        p = [CAM1, CAM2, SCREEN]
-
-        def l(p):
-            return self._find_recordsession(room=room, publisher=p)
-
-        sessions = list(map(l, p))
-        sessions = filter(None, sessions)
-
+        sessions = self._active_sessions(room)
         for session in sessions:
             await self._stop_session(session)
 
         print("Now leaving room...")
         janus_session: JanusSession = self._sessions[room]
         await self._leave_room(janus_session)
-
-        # janus_session.loop.stop()
-        # janus_session.loop.close()
 
     async def _leave_room(self, session: JanusSession):
         transaction = transaction_id()
@@ -393,14 +458,14 @@ class WebSocketClient:
             "session_id": session.session,
             "transaction": transaction
         }))
-        session.status = JanusSessionStatus.Stopped
+        session.status = RecordSessionStatus.Stopped
 
     async def _stop_session(self, session: RecordSession):
         async def _stop_stream(stream):
             forwarding_obj = session.stop_forwarding_obj(stream)
-            forwardmessage = {"request": "stop_rtp_forward", "secret": "adminpwd"}.copy()
-            forwardmessage.update(forwarding_obj)
-            await self._sendmessage(forwardmessage, room=session.room)
+            forward_message = {"request": "stop_rtp_forward", "secret": "adminpwd"}.copy()
+            forward_message.update(forwarding_obj)
+            await self._sendmessage(forward_message, room=session.room)
 
         if session.forwarder.audio_stream_id is not None:
             await _stop_stream(session.forwarder.audio_stream_id)
@@ -409,30 +474,122 @@ class WebSocketClient:
 
         self._stop_forwarding(session)
 
-    def _stop_forwarding(self, session: RecordSession):
+    # 停止录制/转发(清理所占端口)
+    def _stop_forwarding(self, session_p: RecordSession):
+        session: RecordSession = session_p
         room = session.room
         publisher = session.publisher
+        janus: JanusSession = self._sessions[room]
 
-        os.kill(session.recorder_pid, signal.SIGINT)
-        session.recorder_pid = None
+        if publisher == SCREEN:
+            screen = self._find_record_session(room, SCREEN)
+            if screen is not None:
+                self._stop_recording_session(screen, True)
+        else:
+            if janus.recording_screen:
+                screen = self._find_record_session(room, SCREEN)
+                if screen is not None:
+                    self._stop_recording_session(screen, False)
+            # 按需移除Cam
+            self._stop_recording_session(session, True)
+
+    def _stop_recording_session(self, session: RecordSession, remove=True):
+        room = session.room
+        if session.recorder_pid is not None:
+            os.kill(session.recorder_pid, signal.SIGINT)
+            session.recorder_pid = None
 
         print("Now publisher {p} in the room {r} is Stopped recording".format(p=session.publisher, r=session.room))
-        session.status = RecordSessionStatus.Stopped
-        session.clean_ports()
 
-        key = str(session.room) + "-" + str(session.publisher)
-        self._record_sessions.pop(key, None)
+        if remove:
+            session.status = RecordSessionStatus.Stopped
+            key = str(session.room) + "-" + str(session.publisher)
+            self._record_sessions.pop(key, None)
+            session.clean_ports()
+        else:
+            session.status = RecordSessionStatus.Forwarding
 
         # 更新文件信息
         file: RecordFile = self._files[room]
         end_time = int(time.time())
         if file is not None:
-            if int(publisher) == SCREEN:
-                segment: RecordSegment = file.screens[-1]
-                segment.end_time = end_time
-            else:
-                segment: RecordSegment = file.cameras[-1]
-                segment.end_time = end_time
+            segment: RecordSegment = file.files[-1]
+            segment.end_time = end_time
+
+    def _stop_recording_cam(self, session: RecordSession):
+        room = session.room
+        if session.recorder_pid is not None:
+            os.kill(session.recorder_pid, signal.SIGINT)
+            session.recorder_pid = None
+
+        print("Now publisher {p} in the room {r} is Stopped recording".format(p=session.publisher, r=session.room))
+
+        session.status = RecordSessionStatus.Stopped
+        key = str(session.room) + "-" + str(session.publisher)
+        self._record_sessions.pop(key, None)
+        session.clean_ports()
+
+        # 更新文件信息
+        file: RecordFile = self._files[room]
+        end_time = int(time.time())
+        if file is not None:
+            segment: RecordSegment = file.files[-1]
+            segment.end_time = end_time
+
+    # 开始录制屏幕
+    async def start_recording_screen(self, room):
+        janus_session: JanusSession = self._sessions[room]
+        if janus_session is None:
+            return False
+        else:
+            if janus_session.status == JanusSessionStatus.Default:
+                return False
+
+        screen = self._find_record_session(room, SCREEN)
+        if screen is not None:
+            if screen.status != RecordSessionStatus.Recording:
+                cam = self._recording_cam(room)
+                self._stop_recording_session(cam, False)
+                self._record_screen_cam(screen, cam)
+                return True
+
+        publisher = SCREEN
+        session_key = str(room) + "-" + str(publisher)
+        start_time = int(time.time())
+        session = RecordSession(room=room, publisher=publisher, started_time=start_time)
+        self._record_sessions[session_key] = session
+        session.status = RecordSessionStatus.Started
+
+        # preparations:
+        self._create_folders(session)
+        self._create_sdp(session)
+
+        cam = self._recording_cam(room)
+        self._stop_recording_session(cam, False)
+        self._record_screen_cam(session, cam)
+
+        return True
+
+    # 结束录制屏幕
+    async def stop_recording_screen(self, room):
+        if room not in self._sessions:
+            return False
+        janus_session: JanusSession = self._sessions[room]
+        if janus_session is None:
+            return False
+        if not janus_session.recording_screen:
+            return False
+        screen = self._find_record_session(room, SCREEN)
+        if screen is None:
+            return False
+        # 结束录屏但继续录制摄像头
+        self._stop_recording_session(screen, False)
+        cam = self._recording_cam(room)
+        self._record_cam(cam)
+
+        janus_session: JanusSession = self._sessions[screen.room]
+        if janus_session is not None:
+            janus_session.recording_screen = False
 
     def _processing_file(self, room):
         print("Starting processing all the files from room = ", room)

@@ -105,6 +105,7 @@ class JanusSession:
         self.handle = None
         self.status: JanusSessionStatus = JanusSessionStatus.Default
         self.loop = None
+        self.recording_screen = False
 
 
 # RTP forwarding 参数
@@ -162,10 +163,10 @@ class JanusRTPForwarder:
 
 
 class RecordSession:
-    def __init__(self, room, publisher, startedTime):
+    def __init__(self, room, publisher, started_time):
         self.room = room
         self.publisher = publisher
-        self.startedTime = startedTime
+        self.started_time = started_time
 
         self.status = RecordSessionStatus.Default
         self.forwarder: JanusRTPForwarder = None
