@@ -6,9 +6,11 @@ import os
 from pathlib import Path
 from enum import Enum
 
+
 @attr.s
 class JanusEvent:
     sender = attr.ib(validator=attr.validators.instance_of(int))
+
 
 @attr.s
 class PluginData(JanusEvent):
@@ -16,9 +18,11 @@ class PluginData(JanusEvent):
     data = attr.ib()
     jsep = attr.ib()
 
+
 @attr.s
 class WebrtcUp(JanusEvent):
     pass
+
 
 @attr.s
 class Media(JanusEvent):
@@ -30,26 +34,31 @@ class Media(JanusEvent):
         if kind not in ["video", "audio"]:
             raise ValueError("kind must equal video or audio")
 
+
 @attr.s
 class SlowLink(JanusEvent):
     uplink = attr.ib(validator=attr.validators.instance_of(bool))
     lost = attr.ib(validator=attr.validators.instance_of(int))
 
+
 @attr.s
 class HangUp(JanusEvent):
     reason = attr.ib(validator=attr.validators.instance_of(str))
 
+
 @attr.s(cmp=False)
 class Ack:
     transaction = attr.ib(validator=attr.validators.instance_of(str))
+
 
 @attr.s
 class Jsep:
     sdp = attr.ib()
     type = attr.ib(validator=attr.validators.in_(["offer", "pranswer", "answer", "rollback"]))
 
+
 class JanusSessionStatus(Enum):
-    Defalut = 1
+    Default = 1
     Starting = 2
     Forwarding = 3
     Recording = 4
@@ -59,14 +68,16 @@ class JanusSessionStatus(Enum):
 
     Failed = -1
 
+
 class RecordSessionStatus(Enum):
-    Defalut = 1
+    Default = 1
     Started = 2
     Forwarding = 3
     Recording = 4
     Stopped = 5
 
     Failed = -1
+
 
 # 屏幕的ID
 SCREEN = 9
@@ -75,13 +86,15 @@ PORTS = []
 # 测试
 FILE_ROOT_PATH = "/Users/amdox/File/Combine/.recordings/"
 
-def ramdom_port():
+
+def random_port():
     p = random.randint(20001, 50000)
     if p not in PORTS:
         PORTS.append(p)
         return p
     else:
-        ramdom_port
+        return random_port()
+
 
 class JanusSession:
     def __init__(self, room, pin, display) -> None:
@@ -90,10 +103,11 @@ class JanusSession:
         self.display = display
         self.session = None
         self.handle = None
-        self.status:JanusSessionStatus = JanusSessionStatus.Defalut
+        self.status: JanusSessionStatus = JanusSessionStatus.Default
         self.loop = None
 
-#RTP forwarding 参数
+
+# RTP forwarding 参数
 class JanusRTPForwarder:
     def __init__(self, vp, ap, vpt=102, apt=96):
         self.videoport = vp
@@ -104,43 +118,48 @@ class JanusRTPForwarder:
         self.videofmpt = "packetization-mode=1;profile-level-id=42e01f"
         self.audiocodec = "opus/48000/2"
         self.avformat_v = "58.76.100"
-        self.forward_host = "192.168.5.99"
+        self.forward_host = "192.168.5.66"
         self.name = None
         self.video_stream_id = None
         self.audio_stream_id = None
-    
+
     def create_sdp(self, path, name):
         self.name = name
 
-        f = open(path,"a+")
+        f = open(path, "a+")
         if self.audioport == -1:
             f.write(
-                "v=0\r\no=- 0 0 IN IP4 {host}\r\ns={name}\r\nc=IN IP4 {host}\r\nt=0 0\r\na=tool:libavformat {avformat_v}\r\nm=video {videoport} RTP/AVP {videopt}\r\na=rtpmap:{videopt} {videocodec}\r\na=fmtp:{videopt} {videofmpt}\r\n"
-                .format(
-                    name = name,
-                    host = self.forward_host,
-                    avformat_v = self.avformat_v,
-                    videoport = self.videoport,
-                    videopt = self.videopt,
-                    videofmpt = self.videofmpt,
-                    videocodec = self.videocodec
-                    ))
+                "v=0\r\no=- 0 0 IN IP4 {host}\r\ns={name}\r\nc=IN IP4 {host}\r\nt=0 0\r\na=tool:libavformat {"
+                "avformat_v}\r\nm=video {videoport} RTP/AVP {videopt}\r\na=rtpmap:{videopt} {videocodec}\r\na=fmtp:{"
+                "videopt} {videofmpt}\r\n "
+                    .format(
+                    name=name,
+                    host=self.forward_host,
+                    avformat_v=self.avformat_v,
+                    videoport=self.videoport,
+                    videopt=self.videopt,
+                    videofmpt=self.videofmpt,
+                    videocodec=self.videocodec
+                ))
         else:
             f.write(
-                "v=0\r\no=- 0 0 IN IP4 {host}\r\ns={name}\r\nc=IN IP4 {host}\r\nt=0 0\r\na=tool:libavformat {avformat_v}\r\nm=audio {audioport} RTP {audiopt}\r\na=rtpmap:{audiopt} {audiocodec}\r\nm=video {videoport} RTP/AVP {videopt}\r\na=rtpmap:{videopt} {videocodec}\r\na=fmtp:{videopt} {videofmpt}\r\n"
-                .format(
-                    name = name,
-                    host = self.forward_host,
-                    avformat_v = self.avformat_v,
-                    audioport = self.audioport,
-                    audiopt = self.audiopt,
-                    videoport = self.videoport,
-                    videopt = self.videopt,
-                    videofmpt = self.videofmpt,
-                    audiocodec = self.audiocodec,
-                    videocodec = self.videocodec
-                    ))
+                "v=0\r\no=- 0 0 IN IP4 {host}\r\ns={name}\r\nc=IN IP4 {host}\r\nt=0 0\r\na=tool:libavformat {"
+                "avformat_v}\r\nm=audio {audioport} RTP {audiopt}\r\na=rtpmap:{audiopt} {audiocodec}\r\nm=video {"
+                "videoport} RTP/AVP {videopt}\r\na=rtpmap:{videopt} {videocodec}\r\na=fmtp:{videopt} {videofmpt}\r\n "
+                    .format(
+                    name=name,
+                    host=self.forward_host,
+                    avformat_v=self.avformat_v,
+                    audioport=self.audioport,
+                    audiopt=self.audiopt,
+                    videoport=self.videoport,
+                    videopt=self.videopt,
+                    videofmpt=self.videofmpt,
+                    audiocodec=self.audiocodec,
+                    videocodec=self.videocodec
+                ))
         f.close()
+
 
 class RecordSession:
     def __init__(self, room, publisher, startedTime):
@@ -148,8 +167,8 @@ class RecordSession:
         self.publisher = publisher
         self.startedTime = startedTime
 
-        self.status = RecordSessionStatus.Defalut
-        self.forwarder:JanusRTPForwarder = None
+        self.status = RecordSessionStatus.Default
+        self.forwarder: JanusRTPForwarder = None
         self.folder = None
         self.recorder_pid = None
 
@@ -166,9 +185,9 @@ class RecordSession:
         assert self.folder
 
         if self.publisher == SCREEN:
-            self.forwarder = JanusRTPForwarder(vp=ramdom_port(), ap=-1)
+            self.forwarder = JanusRTPForwarder(vp=random_port(), ap=-1)
         else:
-            self.forwarder = JanusRTPForwarder(vp=ramdom_port(), ap=ramdom_port())
+            self.forwarder = JanusRTPForwarder(vp=random_port(), ap=random_port())
 
         # t = time.time()
         name = "{p}_janus.sdp".format(p=self.publisher)
@@ -192,44 +211,46 @@ class RecordSession:
     def forwarding_obj(self):
         if self.publisher == SCREEN:
             return {
-            "host": self.forwarder.forward_host,
-            "video_port":self.forwarder.videoport, 
-            "video_pt":self.forwarder.videopt, 
-            "publisher_id": int(self.publisher), 
-            "room":self.room,
-        }
+                "host": self.forwarder.forward_host,
+                "video_port": self.forwarder.videoport,
+                "video_pt": self.forwarder.videopt,
+                "publisher_id": int(self.publisher),
+                "room": self.room,
+            }
         return {
             "host": self.forwarder.forward_host,
-            "audio_port":self.forwarder.audioport,
-            "video_port":self.forwarder.videoport, 
-            "audio_pt":self.forwarder.audiopt, 
-            "video_pt":self.forwarder.videopt, 
-            "publisher_id": int(self.publisher), 
-            "room":self.room,
+            "audio_port": self.forwarder.audioport,
+            "video_port": self.forwarder.videoport,
+            "audio_pt": self.forwarder.audiopt,
+            "video_pt": self.forwarder.videopt,
+            "publisher_id": int(self.publisher),
+            "room": self.room,
         }
 
     def stop_forwarding_obj(self, stream):
         if self.publisher == SCREEN:
             return {
-            "stream_id": int(stream),
-            "video_port":self.forwarder.videoport, 
-            "audio_pt":self.forwarder.audiopt, 
-            "video_pt":self.forwarder.videopt, 
-            "publisher_id": int(self.publisher), 
-            "room":self.room,
-        }
+                "stream_id": int(stream),
+                "video_port": self.forwarder.videoport,
+                "audio_pt": self.forwarder.audiopt,
+                "video_pt": self.forwarder.videopt,
+                "publisher_id": int(self.publisher),
+                "room": self.room,
+            }
         return {
             "stream_id": int(stream),
-            "audio_port":self.forwarder.audioport,
-            "video_port":self.forwarder.videoport, 
-            "audio_pt":self.forwarder.audiopt, 
-            "video_pt":self.forwarder.videopt, 
-            "publisher_id": int(self.publisher), 
-            "room":self.room,
+            "audio_port": self.forwarder.audioport,
+            "video_port": self.forwarder.videoport,
+            "audio_pt": self.forwarder.audiopt,
+            "video_pt": self.forwarder.videopt,
+            "publisher_id": int(self.publisher),
+            "room": self.room,
         }
-    
+
     # 回收本机的 RTP forwarding listen port
     def clean_ports(self):
         if self.forwarder.audioport is not None:
-            PORTS.remove(self.forwarder.audioport)
-        PORTS.remove(self.forwarder.videoport)
+            if self.forwarder.audioport in PORTS:
+                PORTS.remove(self.forwarder.audioport)
+        if self.forwarder.videoport in PORTS:
+            PORTS.remove(self.forwarder.videoport)

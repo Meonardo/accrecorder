@@ -10,18 +10,21 @@ from aiohttp import web
 from wsclient import WebSocketClient
 
 ROOT = os.path.dirname(__file__)
-                      
+
+
 # common response   
 def json_response(success, code, data):
     return {"success": success, "code": code, "data": data}
     # return json.dumps(dict, indent = 4).encode(encoding='utf_8')
 
+
 # index
 async def index(request):
-    content = "Recording the conference!".encode()
+    content = "Recording the conference!"
     return web.Response(content_type="text/html", text=content)
 
-# check start command 
+
+# check start command
 async def start(request):
     form = await request.post()
     print(u"[START]:Incoming Request: {r}, form: {f}".format(r=request, f=form))
@@ -29,7 +32,7 @@ async def start(request):
     resp = json_response(False, 0, "default response")
 
     room = form["room"]
-    if room.isdigit() == False:
+    if not room.isdigit():
         resp = json_response(False, -1, "Please input correct Room number!")
 
     # publisher = form["publisher"]
@@ -45,6 +48,7 @@ async def start(request):
     print("[END]")
     return web.json_response(resp)
 
+
 # check stop command
 async def stop(request):
     form = await request.post()
@@ -53,7 +57,7 @@ async def stop(request):
     resp = json_response(False, 0, "default response")
 
     room = form["room"]
-    if room.isdigit() == False:
+    if not room.isdigit():
         resp = json_response(False, -1, "Please input correct Room number!")
 
     # publisher = form["publisher"]
@@ -64,10 +68,11 @@ async def stop(request):
     if success:
         resp = json_response(True, 0, "Stop recording")
     else:
-        resp = json_response(False, -3, "Current publisher {p} is not recording".format(p=publisher))        
+        resp = json_response(False, -3, "Current publisher is not recording")
 
     print("[END]")
     return web.json_response(resp)
+
 
 async def on_shutdown(app):
     print("Web server is shutting down...")
@@ -97,18 +102,17 @@ if __name__ == "__main__":
 
     ws = WebSocketClient(args.janus)
     loop = asyncio.get_event_loop()
-    
+
     try:
         runner = web.AppRunner(app)
         loop.run_until_complete(runner.setup())
-        site = web.TCPSite(runner, host="127.0.0.1", port=args.port)    
+        site = web.TCPSite(runner, host="127.0.0.1", port=args.port)
         loop.run_until_complete(site.start())
+        print("Start HTTP server at port ", args.port)
         loop.run_until_complete(ws.loop())
-        
+
     except KeyboardInterrupt:
         pass
     finally:
         print("Stopping now!")
         loop.run_until_complete(ws.close())
-        
-

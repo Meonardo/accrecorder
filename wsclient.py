@@ -11,13 +11,16 @@ import subprocess
 import signal
 import os
 
-from janus import JanusSession, JanusSessionStatus, PluginData, Media, RecordSessionStatus, WebrtcUp, SlowLink, HangUp, Ack, RecordSession
+from janus import JanusSession, JanusSessionStatus, PluginData, Media, RecordSessionStatus, WebrtcUp, SlowLink, HangUp, \
+    Ack, RecordSession
 from recorder import RecordFile, RecordSegment
 from websockets.exceptions import ConnectionClosed
 
-# Random Transaction ID        
+
+# Random Transaction ID
 def transaction_id():
     return "".join(random.choice(string.ascii_letters) for x in range(12))
+
 
 # static publisher IDs
 CAM1 = 1
@@ -26,6 +29,7 @@ SCREEN = 9
 RECORDER = 911
 
 STOP_RECORDING = -99
+
 
 @attr.s
 class WebSocketClient:
@@ -56,7 +60,7 @@ class WebSocketClient:
         if r in self._sessions:
             return self._sessions[r].handle
         return None
-    
+
     async def _create(self, room):
         transaction = "Create_{r}".format(r=room)
         await self.conn.send(json.dumps({
@@ -73,7 +77,7 @@ class WebSocketClient:
             "plugin": "janus.plugin.videoroom",
             "transaction": transaction
         }))
-    
+
     async def _sendmessage(self, body, room, jsep=None):
         print("send message, body", body)
 
@@ -109,14 +113,15 @@ class WebSocketClient:
                 return
 
     async def _handle_pre_join(self, room, transaction, raw):
-        session:JanusSession = self._sessions[int(room)]
+        session: JanusSession = self._sessions[int(room)]
         if transaction == "Create":
             session.session = raw["data"]["id"]
             await self._attach(int(room))
         elif transaction == "Attach":
             session.handle = raw["data"]["id"]
             # join the room
-            joinmessage = { "request": "join", "ptype": "publisher", "room": int(room), "pin": str(session.pin), "display": session.display, "id": RECORDER }
+            joinmessage = {"request": "join", "ptype": "publisher", "room": int(room), "pin": str(session.pin),
+                           "display": session.display, "id": RECORDER}
             await self._sendmessage(joinmessage, room=room)
 
     async def _recv(self):
@@ -131,9 +136,9 @@ class WebSocketClient:
         janus = raw["janus"]
 
         if janus == "event" or janus == "success":
-            transaction = str(raw["transaction"])
-            if janus == "success":
-                r,_, room = transaction.partition("_")
+            if janus == "success" and "transaction" in raw:
+                transaction = str(raw["transaction"])
+                r, _, room = transaction.partition("_")
                 if len(r) > 0 and len(room) > 0:
                     await self._handle_pre_join(room=room, transaction=r, raw=raw)
             if "plugindata" in raw:
@@ -171,7 +176,7 @@ class WebSocketClient:
         else:
             return raw
 
-    async def _handle_plugin_data(self, data:PluginData):
+    async def _handle_plugin_data(self, data: PluginData):
         print("handle plugin data: \n", data)
 
         if data.jsep is not None:
@@ -180,7 +185,7 @@ class WebSocketClient:
             events_type = data.data["videoroom"]
             if events_type == "joined":
                 await self._handle_joind(data.data)
-            elif events_type == "event" :
+            elif events_type == "event":
                 await self._handle_events(data.data)
             elif events_type == "rtp_forward":
                 await self._handle_rtp_forward(data.data)
@@ -219,14 +224,14 @@ class WebSocketClient:
         publisher = int(data["publisher_id"])
         assert publisher
 
-        session:RecordSession = self._find_recordsession(room, publisher)
+        session: RecordSession = self._find_recordsession(room, publisher)
         if session is not None:
             if "rtp_stream" in data:
                 rtsp_stream = data["rtp_stream"]
                 if "audio_stream_id" in rtsp_stream:
                     session.update_forwarder(a_stream=rtsp_stream["audio_stream_id"])
                 if "video_stream_id" in rtsp_stream:
-                    session.update_forwarder(v_stream=rtsp_stream["video_stream_id"])    
+                    session.update_forwarder(v_stream=rtsp_stream["video_stream_id"])
                 self._launch_recorder(session)
 
                 print("Now publisher {p} in the room {r} is forwarding".format(p=session.publisher, r=session.room))
@@ -243,23 +248,21 @@ class WebSocketClient:
                 if isinstance(msg, PluginData):
                     await self._handle_plugin_data(msg)
                 elif isinstance(msg, Media):
-                    print (msg)
+                    print(msg)
                 elif isinstance(msg, WebrtcUp):
-                    print (msg)
+                    print(msg)
                 elif isinstance(msg, SlowLink):
-                    print (msg)
+                    print(msg)
                 elif isinstance(msg, HangUp):
-                    print (msg)
+                    print(msg)
                 elif not isinstance(msg, Ack):
                     print(msg)
             except (KeyboardInterrupt, ConnectionClosed):
                 return
 
-        return 0
-
     # 是否已经加入了房间
     def _is_forwarding(self, key):
-        if key in self._record_sessions: 
+        if key in self._record_sessions:
             return True
         return False
 
@@ -268,7 +271,7 @@ class WebSocketClient:
         display = "record_" + str(room)
 
         if room in self._sessions:
-            session:JanusSession = self._sessions[room]
+            session: JanusSession = self._sessions[room]
             if session.status.value < JanusSessionStatus.Processing.value:
                 print("Current recorder is in the room")
                 return False
@@ -292,7 +295,7 @@ class WebSocketClient:
 
         session_key = str(room) + "-" + str(publisher)
         start_time = int(time.time())
-        if self._is_forwarding(session_key) == False:
+        if not self._is_forwarding(session_key):
             session = RecordSession(room=room, publisher=publisher, startedTime=start_time)
             self._record_sessions[session_key] = session
             session.status = RecordSessionStatus.Started
@@ -304,20 +307,22 @@ class WebSocketClient:
             # 开启转发
             await self._forward_rtp(session)
         else:
-           print("The publisher {p} in the room {r} is forwarding".format(p=publisher, r=room))
+            print("The publisher {p} in the room {r} is forwarding".format(p=publisher, r=room))
 
-    def _create_folders(self, session: RecordSession):
+    @staticmethod
+    def _create_folders(session: RecordSession):
         print("Creating room file folder...")
         session.create_file_folder()
 
-    def _create_sdp(self, session: RecordSession):
+    @staticmethod
+    def _create_sdp(session: RecordSession):
         print("Creating SDP file for ffmpeg...")
         session.create_sdp()
 
     # forwarding_rtp to local server
     async def _forward_rtp(self, session: RecordSession):
         forwarding_obj = session.forwarding_obj()
-        forwardmessage = { "request": "rtp_forward", "secret": "adminpwd" }.copy()
+        forwardmessage = {"request": "rtp_forward", "secret": "adminpwd"}.copy()
         forwardmessage.update(forwarding_obj)
         await self._sendmessage(forwardmessage, room=session.room)
 
@@ -328,7 +333,9 @@ class WebSocketClient:
         file_path = folder + name
         sdp = folder + session.forwarder.name
 
-        proc = subprocess.Popen(['ffmpeg', '-loglevel', 'info', '-hide_banner', '-protocol_whitelist', 'file,udp,rtp', '-i', sdp, '-c', 'copy', file_path])
+        proc = subprocess.Popen(
+            ['ffmpeg', '-loglevel', 'info', '-hide_banner', '-protocol_whitelist', 'file,udp,rtp', '-i', sdp, '-c',
+             'copy', file_path])
         session.recorder_pid = proc.pid
 
         print("Now publisher {p} in the room {r} is recording".format(p=session.publisher, r=session.room))
@@ -340,12 +347,12 @@ class WebSocketClient:
             file = RecordFile(room=session.room, cam=segment)
             self._files[session.room] = file
         else:
-            file:RecordFile = self._files[session.room]
+            file: RecordFile = self._files[session.room]
             if segment.is_screen:
                 file.screens.append(segment)
             else:
                 file.cameras.append(segment)
-        
+
     # 结束当前房间录制
     async def stop_recording(self, room):
         if room not in self._sessions:
@@ -359,26 +366,27 @@ class WebSocketClient:
         if session_key in self._record_sessions:
             return self._record_sessions[session_key]
         return None
-    
+
     async def _stop_all_sessions(self, room):
         p = [CAM1, CAM2, SCREEN]
+
         def l(p):
             return self._find_recordsession(room=room, publisher=p)
-         
+
         sessions = list(map(l, p))
         sessions = filter(None, sessions)
-        
+
         for session in sessions:
             await self._stop_session(session)
-        
+
         print("Now leaving room...")
-        janus_session:JanusSession = self._sessions[room]
+        janus_session: JanusSession = self._sessions[room]
         await self._leave_room(janus_session)
 
         # janus_session.loop.stop()
         # janus_session.loop.close()
-        
-    async def _leave_room(self, session:JanusSession):
+
+    async def _leave_room(self, session: JanusSession):
         transaction = transaction_id()
         await self.conn.send(json.dumps({
             "janus": "destroy",
@@ -390,10 +398,10 @@ class WebSocketClient:
     async def _stop_session(self, session: RecordSession):
         async def _stop_stream(stream):
             forwarding_obj = session.stop_forwarding_obj(stream)
-            forwardmessage = { "request": "stop_rtp_forward", "secret": "adminpwd" }.copy()
+            forwardmessage = {"request": "stop_rtp_forward", "secret": "adminpwd"}.copy()
             forwardmessage.update(forwarding_obj)
-            await self._sendmessage(forwardmessage, room=session.room)  
-        
+            await self._sendmessage(forwardmessage, room=session.room)
+
         if session.forwarder.audio_stream_id is not None:
             await _stop_stream(session.forwarder.audio_stream_id)
         if session.forwarder.video_stream_id is not None:
@@ -425,7 +433,7 @@ class WebSocketClient:
             else:
                 segment: RecordSegment = file.cameras[-1]
                 segment.end_time = end_time
-        
+
     def _processing_file(self, room):
         print("Starting processing all the files from room = ", room)
 
@@ -435,6 +443,5 @@ class WebSocketClient:
                 file.process()
 
                 print("\n\n\n----------TEST--------\n\n\n")
-                session:JanusSession = self._sessions[room]
+                session: JanusSession = self._sessions[room]
                 session.status = JanusSessionStatus.Processing
-                

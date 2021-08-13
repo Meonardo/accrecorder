@@ -234,5 +234,3 @@ class RecordFile:
         self.status = RecordStatus.Finished
 
         print("\n\n***********\nDone! file at path: ", target, "\n***********\n\n")
-
-        
