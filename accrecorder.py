@@ -5,8 +5,10 @@ import asyncio
 
 from aiohttp import web
 from wsclient import WebSocketClient
+from httpclient import HTTPClient
 
 ROOT = os.path.dirname(__file__)
+client = HTTPClient()
 
 
 # common response   
@@ -32,11 +34,11 @@ async def start(request):
     if not room.isdigit():
         resp = json_response(False, -1, "Please input correct Room number!")
 
-    # publisher = form["publisher"]
-    # if room.isdigit() == False:
-    #     resp = json_response(False, -2, "Please input correct publisher identifier!")
+    publisher = form["publisher"]
+    if not publisher.isdigit():
+        resp = json_response(False, -2, "Please input correct publisher identifier!")
 
-    success = await ws.start_recording(int(room), form["pin"])
+    success = await client.start_recording(room, [1])
     if success:
         resp = json_response(True, 0, "Start recording...")
     else:
@@ -57,11 +59,7 @@ async def stop(request):
     if not room.isdigit():
         resp = json_response(False, -1, "Please input correct Room number!")
 
-    # publisher = form["publisher"]
-    # if room.isdigit() == False:
-    #     resp = json_response(False, -2, "Please input correct publisher identifier!")
-
-    success = await ws.stop_recording(int(room))
+    success = await client.stop_recording(room)
     if success:
         resp = json_response(True, 0, "Stop recording")
     else:
@@ -87,13 +85,13 @@ async def recording_screen(request):
     cmd = int(cmd)
     if 0 < cmd < 3:
         if cmd == 1:
-            success = await ws.start_recording_screen(int(room))
+            success = await client.start_recording_screen(room)
             if not success:
                 resp = json_response(False, -4, "Current screen is recording!")
             else:
                 resp = json_response(True, 0, "Screen start recording")
         else:
-            success = await ws.stop_recording_screen(int(room))
+            success = await client.stop_recording_screen(room)
             if not success:
                 resp = json_response(False, -4, "Current screen is NOT recording!")
             else:
@@ -105,17 +103,42 @@ async def recording_screen(request):
     return web.json_response(resp)
 
 
+# 切换摄像头
+async def switch_camera(request):
+    form = await request.post()
+    print(u"[START]:Incoming Request: {r}, form: {f}".format(r=request, f=form))
+
+    resp = json_response(False, 0, "default response")
+
+    room = form["room"]
+    if not room.isdigit():
+        resp = json_response(False, -1, "Please input correct Room number!")
+
+    publisher = form["publisher"]
+    if not publisher.isdigit():
+        resp = json_response(False, -2, "Please input correct publisher identifier!")
+
+    success = await client.switch_camera(room, int(publisher))
+    if success:
+        resp = json_response(True, 0, "Switch to CAM{}".format(publisher))
+    else:
+        resp = json_response(False, -3, "You already have record CAM{}".format(publisher))
+
+    print("[END]")
+    return web.json_response(resp)
+
+
 async def on_shutdown(app):
     print("Web server is shutting down...")
     # close ws
-    loop.run_until_complete(ws.close())
-
-    loop.stop()
-    loop.close()
+    await client.close()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="accrecorder")
+    parser.add_argument(
+        "--host", default="0.0.0.0", help="Host for HTTP server (default: 0.0.0.0)"
+    )
     parser.add_argument(
         "--janus", default="ws://192.168.5.12:8188", help="Janus gateway address (default: 127.0.0.1:8188)"
     )
@@ -131,20 +154,18 @@ if __name__ == "__main__":
     app.router.add_post("/record/start", start)
     app.router.add_post("/record/stop", stop)
     app.router.add_post("/record/screen", recording_screen)
+    app.router.add_post("/record/camera", switch_camera)
 
     ws = WebSocketClient(args.janus)
     loop = asyncio.get_event_loop()
 
     try:
-        runner = web.AppRunner(app)
-        loop.run_until_complete(runner.setup())
-        site = web.TCPSite(runner, host="127.0.0.1", port=args.port)
-        loop.run_until_complete(site.start())
-        print("Start HTTP server at port ", args.port)
-        loop.run_until_complete(ws.loop())
-
+        web.run_app(
+            app, access_log=None, host=args.host, port=args.port
+        )
     except KeyboardInterrupt:
         pass
     finally:
         print("Stopping now!")
-        loop.run_until_complete(ws.close())
+
+

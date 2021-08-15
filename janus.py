@@ -216,7 +216,7 @@ class RecordSession:
                 "video_port": self.forwarder.videoport,
                 "video_pt": self.forwarder.videopt,
                 "publisher_id": int(self.publisher),
-                "room": self.room,
+                "room": int(self.room),
             }
         return {
             "host": self.forwarder.forward_host,
@@ -225,7 +225,7 @@ class RecordSession:
             "audio_pt": self.forwarder.audiopt,
             "video_pt": self.forwarder.videopt,
             "publisher_id": int(self.publisher),
-            "room": self.room,
+            "room": int(self.room),
         }
 
     def stop_forwarding_obj(self, stream):
