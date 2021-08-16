@@ -39,6 +39,15 @@ class HTTPClient:
     async def close(self):
         await self.http_session.close()
 
+    async def configure(self, room, class_id, cloud_class_id, upload_server):
+        success = await self.start_forwarding(room, [CAM1, CAM2, SCREEN])
+        if success:
+            janus: JanusSession = self.__sessions[room]
+            janus.cloud_class_id = cloud_class_id
+            janus.class_id = class_id
+            janus.upload_server = upload_server
+        return success
+
     # region Forwarding
     async def start_forwarding(self, room, publishers):
         session_id = await self.__login_janus()
@@ -259,7 +268,7 @@ class HTTPClient:
         sdp = folder + session.forwarder.name
 
         proc = subprocess.Popen(
-            ['ffmpeg', '-loglevel', 'info', '-hide_banner', '-protocol_whitelist', 'file,udp,rtp', '-i', sdp, '-c',
+            ['ffmpeg', '-protocol_whitelist', 'file,udp,rtp', '-i', sdp, '-c',
              'copy', file_path])
         session.recorder_pid = proc.pid
 
@@ -372,7 +381,7 @@ class HTTPClient:
             self.__stop_recording_session(s)
         if len(sessions) == 0:
             return False
-        self.__processing_file(room)
+        await self.__processing_file(room)
 
         # 清理资源
         self.__sessions.pop(room, None)
@@ -380,16 +389,19 @@ class HTTPClient:
 
         return True
 
-    def __processing_file(self, room):
+    async def __processing_file(self, room):
         print("Starting processing all the files from room = ", room)
 
         if room in self.__files:
             file: RecordFile = self.__files[room]
+            session: JanusSession = self.__sessions[room]
             if file is not None:
-                file.process()
-
                 print("\n\n\n----------PROCESSING--------\n\n\n")
-                session: JanusSession = self.__sessions[room]
                 session.status = JanusSessionStatus.Processing
+                file.process()
+                session.status = JanusSessionStatus.Uploading
+                resp = await file.upload(session, self.http_session)
+                if resp is not None:
+                    print(resp)
 
     # endregion

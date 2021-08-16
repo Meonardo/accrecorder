@@ -1,12 +1,13 @@
 import os
-from posixpath import join
 import subprocess
-import signal
+import asyncio
+import aiohttp
 
 from enum import Enum
-from typing import Iterator
 from janus import FILE_ROOT_PATH, SCREEN
 from pathlib import Path
+from janus import JanusSession
+from aiohttp import FormData
 
 TIME_THRESHOLD = 3
 
@@ -53,6 +54,8 @@ class RecordFile:
         self._join_file_path = None
         self._file_cuts = None
         self._cuts_path = None
+        self._output_path = None
+        self._thumbnail_path = None
 
         # 屏幕和Cam同时开始/结束
         self.start_simultaneously = False
@@ -62,7 +65,9 @@ class RecordFile:
         self.files = list(filter(None, self.files))
 
         self._join_files()
-        print("\n\n***********\nDone! file at path: ", self._join_file_path, "\n***********\n\n")
+        self._transcode()
+        print("\n\n***********\nDone! file at path: ", self._output_path, "\n***********\n\n")
+        print("***********\nDone! thumbnail at path: ", self._thumbnail_path, "\n***********\n\n")
 
     # 判断是否同时开始或者同时结束
     def _process_time(self):
@@ -95,12 +100,42 @@ class RecordFile:
         f.write(contents)
         f.close()
 
-        self._join_file_path = self.folder + "/joind.ts"
+        self._join_file_path = self.folder + "/joined.ts"
         p = subprocess.Popen(
             ['ffmpeg', '-f', 'concat', '-safe', '0', '-i', cmd_file_path, '-c', 'copy', self._join_file_path])
         p.wait()
 
         self.status = RecordStatus.Processing
+
+    def _transcode(self):
+        audio_codec = 'aac'
+        self._join_file_path = self.folder + "/joined.ts"
+        self._output_path = self.folder + "/output.mp4"
+        # CLI ffmpeg -i input_file.fmt -c:v copy -c:a aac output.mp4
+        p = subprocess.Popen(
+            ['ffmpeg', '-i', self._join_file_path, '-c:v', 'copy', '-c:a', audio_codec, self._output_path])
+        p.wait()
+        # CLI ffmpeg -i input.mp4 -ss 00:00:01.000 -vframes 1 output.png
+        self._thumbnail_path = self.folder + "/thumbnail.png"
+        p = subprocess.Popen(
+            ['ffmpeg', '-i', self._output_path, '-ss', '00:00:05.000', '-vframes', '1', self._thumbnail_path])
+        p.wait()
+
+    async def upload(self, janus: JanusSession, session: aiohttp.ClientSession):
+        if janus.class_id is None or janus.cloud_class_id is None or janus.upload_server is None:
+            return None
+        path = janus.upload_server + "?classId={c}&cloudClassId={cc}".format(c=janus.class_id, cc=janus.cloud_class_id)
+        data = FormData()
+        data.add_field('videoFile',
+                       open(self._output_path, 'rb'),
+                       filename='output.mp4',
+                       content_type='multipart/form-data')
+        data.add_field('imageFile',
+                       open(self._thumbnail_path, 'rb'),
+                       filename='thumbnail.png',
+                       content_type='multipart/form-data')
+        async with session.post(path, data=data) as response:
+            return await response.json()
 
     # 将合并的摄像头文件根据屏幕文件进行分段
     def _separate_files(self):

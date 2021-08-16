@@ -64,6 +64,7 @@ class JanusSessionStatus(Enum):
     Recording = 4
     Stopped = 5
     Processing = 6
+    Uploading = 6
     Finished = 7
 
     Failed = -1
@@ -74,6 +75,7 @@ class RecordSessionStatus(Enum):
     Started = 2
     Forwarding = 3
     Recording = 4
+    Uploading = 4
     Stopped = 5
 
     Failed = -1
@@ -106,6 +108,9 @@ class JanusSession:
         self.status: JanusSessionStatus = JanusSessionStatus.Default
         self.loop = None
         self.recording_screen = False
+        self.class_id = None
+        self.cloud_class_id = None
+        self.upload_server = None
 
 
 # RTP forwarding 参数
