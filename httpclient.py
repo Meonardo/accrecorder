@@ -89,7 +89,7 @@ class HTTPClient:
                 return r['data']['id']
 
     async def __forwarding_rtp(self, session_id, handle_id, session: RecordSession):
-        forwarding_obj = session.forwarding_obj()
+        forwarding_obj = session.()
         forward_message = {"request": "rtp_forward", "secret": "adminpwd"}.copy()
         forward_message.update(forwarding_obj)
         payload = self.__janus_message(forward_message, session_id, handle_id)

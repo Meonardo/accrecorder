@@ -123,7 +123,7 @@ class JanusRTPForwarder:
         self.videofmpt = "packetization-mode=1;profile-level-id=42e01f"
         self.audiocodec = "opus/48000/2"
         self.avformat_v = "58.76.100"
-        self.forward_host = "192.168.5.66"
+        self.forward_host = "192.168.5.55"
         self.name = None
         self.video_stream_id = None
         self.audio_stream_id = None
