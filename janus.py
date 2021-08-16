@@ -1,5 +1,4 @@
-import asyncio
-from logging import raiseExceptions
+import platform
 import attr
 import random
 import os
@@ -180,9 +179,12 @@ class RecordSession:
 
     # 创建录像房间的文件夹, 当前房间会话的所有文件都在此文件夹中
     def create_file_folder(self):
-        dir = FILE_ROOT_PATH + str(self.room)
-        Path(dir).mkdir(parents=True, exist_ok=True)
-        self.folder = dir + "/"
+        if platform.system() == "Darwin":
+            file_dir = "/Users/amdox/File/Combine/.recordings/"
+        else:
+            file_dir = "/home/h/videos/"
+        Path(file_dir).mkdir(parents=True, exist_ok=True)
+        self.folder = file_dir + "/"
 
         print("\nroom folder created at: ", self.folder, "\n")
 
