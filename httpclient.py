@@ -1,5 +1,5 @@
-import asyncio
-import json
+
+import platform
 import random
 import string
 import time
@@ -230,19 +230,28 @@ class HTTPClient:
         sdp_screen = folder + screen.forwarder.name
         sdp_cam = folder + cam.forwarder.name
 
+        if platform.system() == "Darwin":
+            encoder = "h264_videotoolbox"
+        elif platform.system() == "Linux":
+            encoder = "h264_v4l2m2m"
+        else:
+            encoder = "h264_qsv"
+
         proc = subprocess.Popen(['ffmpeg',
                                  '-protocol_whitelist', 'file,udp,rtp',
+                                 '-use_wallclock_as_timestamps', '1',
                                  '-i', sdp_screen,
                                  '-protocol_whitelist', 'file,udp,rtp',
+                                 '-use_wallclock_as_timestamps', '1',
                                  '-i', sdp_cam,
                                  '-filter_complex',
                                  '[1]scale=iw/3:ih/3[pip];[0][pip] overlay=main_w-overlay_w-20:main_h-overlay_h-20',
-                                 '-codec:v', 'libx264',
-                                 '-preset', 'ultrafast',
-                                 '-tune', 'zerolatency',
+                                 '-codec:v', encoder,
+                                 # '-preset', 'ultrafast',
+                                 # '-tune', 'zerolatency',
                                  '-r', '30',
-                                 '-b:v', '5M',
-                                 '-crf', '18',
+                                 '-b:v', '4M',
+                                 # '-crf', '18',
                                  '-codec:a', 'copy',
                                  file_path])
         screen.recorder_pid = proc.pid
@@ -268,7 +277,7 @@ class HTTPClient:
         sdp = folder + session.forwarder.name
 
         proc = subprocess.Popen(
-            ['ffmpeg', '-protocol_whitelist', 'file,udp,rtp', '-i', sdp, '-c',
+            ['ffmpeg', '-protocol_whitelist', 'file,udp,rtp', '-use_wallclock_as_timestamps', '1', '-i', sdp, '-c',
              'copy', file_path])
         session.recorder_pid = proc.pid
 
@@ -399,9 +408,10 @@ class HTTPClient:
                 print("\n\n\n----------PROCESSING--------\n\n\n")
                 session.status = JanusSessionStatus.Processing
                 file.process()
-                session.status = JanusSessionStatus.Uploading
-                resp = await file.upload(session, self.http_session)
-                if resp is not None:
-                    print(resp)
+                # session.status = JanusSessionStatus.Uploading
+                # resp = await file.upload(session, self.http_session)
+                # if resp is not None:
+                #     print(resp)
+                #     session.status = JanusSessionStatus.Finished
 
     # endregion

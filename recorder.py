@@ -108,12 +108,12 @@ class RecordFile:
         self.status = RecordStatus.Processing
 
     def _transcode(self):
-        audio_codec = 'aac'
+        audio_codec = 'mp3'
         self._join_file_path = self.folder + "/joined.ts"
         self._output_path = self.folder + "/output.mp4"
         # CLI ffmpeg -i input_file.fmt -c:v copy -c:a aac output.mp4
         p = subprocess.Popen(
-            ['ffmpeg', '-i', self._join_file_path, '-c:v', 'copy', '-c:a', audio_codec, self._output_path])
+            ['ffmpeg', '-i', self._join_file_path, '-c:v', 'copy', '-c:a', 'copy', self._output_path])
         p.wait()
         # CLI ffmpeg -i input.mp4 -ss 00:00:01.000 -vframes 1 output.png
         self._thumbnail_path = self.folder + "/thumbnail.png"

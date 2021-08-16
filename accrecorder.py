@@ -26,7 +26,7 @@ async def index(request):
 # Configure record server per room
 async def configure(request):
     form = await request.post()
-    print(u"\n[START]:Incoming Request: {r}, form: {f}".format(r=request, f=form))
+    print(u"[START]\n:Incoming Request: {r}, form: {f}".format(r=request, f=form))
 
     if 'room' not in form:
         return json_response(False, -1, "Please input Room number!")
@@ -56,7 +56,7 @@ async def configure(request):
 # check start command
 async def start(request):
     form = await request.post()
-    print(u"\n[START]:Incoming Request: {r}, form: {f}".format(r=request, f=form))
+    print(u"[START]\n:Incoming Request: {r}, form: {f}".format(r=request, f=form))
 
     if 'room' not in form:
         return json_response(False, -1, "Please input Room number!")
@@ -85,7 +85,7 @@ async def start(request):
 # check stop command
 async def stop(request):
     form = await request.post()
-    print(u"\n[START]:Incoming Request: {r}, form: {f}".format(r=request, f=form))
+    print(u"[START]\n:Incoming Request: {r}, form: {f}".format(r=request, f=form))
 
     if 'room' not in form:
         return json_response(False, -1, "Please input Room number!")
@@ -105,7 +105,7 @@ async def stop(request):
 
 async def recording_screen(request):
     form = await request.post()
-    print(u"\n[START]:Incoming Request: {r}, form: {f}".format(r=request, f=form))
+    print(u"[START]\n:Incoming Request: {r}, form: {f}".format(r=request, f=form))
 
     if 'room' not in form:
         return json_response(False, -1, "Please input Room number!")
@@ -142,7 +142,7 @@ async def recording_screen(request):
 # 切换摄像头
 async def switch_camera(request):
     form = await request.post()
-    print(u"\n[START]:Incoming Request: {r}, form: {f}".format(r=request, f=form))
+    print(u"[START]\n:Incoming Request: {r}, form: {f}".format(r=request, f=form))
 
     if 'room' not in form:
         return json_response(False, -1, "Please input Room number!")
