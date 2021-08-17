@@ -178,11 +178,11 @@ class RecordSession:
     # 创建录像房间的文件夹, 当前房间会话的所有文件都在此文件夹中
     def create_file_folder(self):
         if platform.system() == "Darwin":
-            file_dir = "/Users/amdox/File/Combine/.recordings/"
+            file_dir = "/Users/amdox/File/Combine/.recordings/" + str(self.room)
         else:
-            file_dir = "/home/h/videos/"
+            file_dir = "/home/h/videos/" + str(self.room)
         Path(file_dir).mkdir(parents=True, exist_ok=True)
-        self.folder = file_dir
+        self.folder = file_dir + "/"
 
         print("\nroom folder created at: ", self.folder, "\n")
 
