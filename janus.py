@@ -84,8 +84,6 @@ class RecordSessionStatus(Enum):
 SCREEN = 9
 # 端口管理
 PORTS = []
-# 测试
-FILE_ROOT_PATH = "/Users/amdox/File/Combine/.recordings/"
 
 
 def random_port():
@@ -184,7 +182,7 @@ class RecordSession:
         else:
             file_dir = "/home/h/videos/"
         Path(file_dir).mkdir(parents=True, exist_ok=True)
-        self.folder = file_dir + "/"
+        self.folder = file_dir
 
         print("\nroom folder created at: ", self.folder, "\n")
 

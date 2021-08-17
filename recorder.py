@@ -1,10 +1,10 @@
 import os
 import subprocess
-import asyncio
+import platform
 import aiohttp
 
 from enum import Enum
-from janus import FILE_ROOT_PATH, SCREEN
+from janus import SCREEN
 from pathlib import Path
 from janus import JanusSession
 from aiohttp import FormData
@@ -49,8 +49,11 @@ class RecordFile:
         self.screens = []
         self.files = [file]
         self.status: RecordStatus = RecordStatus.Defalut
-
-        self.folder = FILE_ROOT_PATH + str(self.room)
+        if platform.system() == "Darwin":
+            file_dir = "/Users/amdox/File/Combine/.recordings/"
+        else:
+            file_dir = "/home/h/videos/"
+        self.folder = file_dir + str(self.room)
         self._join_file_path = None
         self._file_cuts = None
         self._cuts_path = None

@@ -233,7 +233,7 @@ class HTTPClient:
         if platform.system() == "Darwin":
             encoder = "h264_videotoolbox"
         elif platform.system() == "Linux":
-            encoder = "h264_v4l2m2m"
+            encoder = "h264_nvenc"
         else:
             encoder = "h264_qsv"
 
