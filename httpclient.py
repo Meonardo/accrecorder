@@ -248,7 +248,7 @@ class HTTPClient:
                                  '-hwaccel_output_format', 'cuda',
                                  '-i', sdp_cam,
                                  '-filter_complex',
-                                 '[1]scale=iw/3:ih/3[pip];[0][pip] overlay=main_w-overlay_w-20:main_h-overlay_h-20',
+                                 '[1]scale_npp=640:-1:format=nv12[overlay]; [0][overlay]overlay_cuda=x=1260:y=700',
                                  '-codec:v', encoder,
                                  '-preset', 'p2',
                                  '-tune', 'll',
