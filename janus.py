@@ -1,59 +1,8 @@
 import platform
-import attr
 import random
 import os
 from pathlib import Path
 from enum import Enum
-
-
-@attr.s
-class JanusEvent:
-    sender = attr.ib(validator=attr.validators.instance_of(int))
-
-
-@attr.s
-class PluginData(JanusEvent):
-    plugin = attr.ib(validator=attr.validators.instance_of(str))
-    data = attr.ib()
-    jsep = attr.ib()
-
-
-@attr.s
-class WebrtcUp(JanusEvent):
-    pass
-
-
-@attr.s
-class Media(JanusEvent):
-    receiving = attr.ib(validator=attr.validators.instance_of(bool))
-    kind = attr.ib(validator=attr.validators.in_(["audio", "video"]))
-
-    @kind.validator
-    def validate_kind(self, attribute, kind):
-        if kind not in ["video", "audio"]:
-            raise ValueError("kind must equal video or audio")
-
-
-@attr.s
-class SlowLink(JanusEvent):
-    uplink = attr.ib(validator=attr.validators.instance_of(bool))
-    lost = attr.ib(validator=attr.validators.instance_of(int))
-
-
-@attr.s
-class HangUp(JanusEvent):
-    reason = attr.ib(validator=attr.validators.instance_of(str))
-
-
-@attr.s(cmp=False)
-class Ack:
-    transaction = attr.ib(validator=attr.validators.instance_of(str))
-
-
-@attr.s
-class Jsep:
-    sdp = attr.ib()
-    type = attr.ib(validator=attr.validators.in_(["offer", "pranswer", "answer", "rollback"]))
 
 
 class JanusSessionStatus(Enum):
@@ -76,7 +25,6 @@ class RecordSessionStatus(Enum):
     Recording = 4
     Uploading = 4
     Stopped = 5
-
     Failed = -1
 
 

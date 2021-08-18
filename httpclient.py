@@ -1,5 +1,3 @@
-
-import asyncio
 import random
 import string
 import time
@@ -10,7 +8,7 @@ import aiohttp
 from aiohttp import ClientSession
 
 from janus import JanusSession, JanusSessionStatus, RecordSession, RecordSessionStatus
-from recorder import RecordFile, RecordSegment
+from recorder import RecordFile, RecordSegment, PausedFile
 
 # janus HTTP server
 JANUS_HOST = 'http://192.168.5.12:8088/janus'
@@ -34,6 +32,8 @@ class HTTPClient:
         self.__record_sessions = {}
         # {room: RecordFile}
         self.__files = {}
+        # {room: PausedFile}
+        self.__pause_files = {}
         self.http_session: ClientSession = aiohttp.ClientSession()
 
     async def close(self):
@@ -270,7 +270,8 @@ class HTTPClient:
         cam.status = RecordSessionStatus.Recording
 
         # 保存文件信息
-        segment = RecordSegment(name=s_name, begin_time=begin_time, room=screen.room, publisher=screen.publisher, cam_name=c_name)
+        segment = RecordSegment(name=s_name, begin_time=begin_time, room=screen.room, publisher=screen.publisher,
+                                cam_name=c_name)
         if screen.room not in self.__files:
             file = RecordFile(room=screen.room, file=segment)
             self.__files[screen.room] = file
@@ -375,9 +376,12 @@ class HTTPClient:
     def __stop_recording_session(self, session: RecordSession, remove=True):
         room = session.room
         if session.recorder_pid is not None:
-            os.kill(session.recorder_pid, signal.SIGINT)
-            session.recorder_pid = None
-
+            try:
+                os.kill(session.recorder_pid, signal.SIGINT)
+                session.recorder_pid = None
+            except Exception as e:
+                pass
+            time.sleep(0.1)
         if remove:
             session.status = RecordSessionStatus.Stopped
             key = str(session.room) + "-" + str(session.publisher)
@@ -396,8 +400,12 @@ class HTTPClient:
                 # merge if needed
                 segment.merge()
 
+    # 暂停录制
+    async def pause_recording(self, room):
+        await self.stop_recording(room, True)
+
     # 停止录制
-    async def stop_recording(self, room):
+    async def stop_recording(self, room, pause=False):
         if room not in self.__sessions:
             return False
         sessions = self.__active_sessions(room)
@@ -415,7 +423,7 @@ class HTTPClient:
 
         return True
 
-    async def __processing_file(self, room):
+    async def __processing_file(self, room, pause=False):
         print("Starting processing all the files from room = ", room)
 
         if room in self.__files:
@@ -427,6 +435,16 @@ class HTTPClient:
                 file.process()
                 # 清理所有的文件
                 file.clear_all_files()
+                if pause:
+                    if room not in self.__pause_files:
+                        paused_file = PausedFile(room, file)
+                        self.__pause_files[room] = paused_file
+                    else:
+                        paused_file: PausedFile = self.__pause_files[room]
+                        paused_file.files.append(file)
+                else:
+                    if room in self.__pause_files:
+                        self.__pause_files.pop(room, None)
                 # session.status = JanusSessionStatus.Uploading
                 # resp = await file.upload(session, self.http_session)
                 # if resp is not None:

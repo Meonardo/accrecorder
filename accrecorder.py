@@ -73,7 +73,7 @@ async def start(request):
 
     success = await client.start_recording(room, list_str, RTP_FORWARD_HOST)
     if success:
-        resp = json_response(True, 0, "Start recording...")
+        resp = json_response(True, 0, "Start recording at room {}".format(room))
     else:
         resp = json_response(False, -3, "Current room {r} is recording".format(r=room))
 
@@ -94,9 +94,30 @@ async def stop(request):
 
     success = await client.stop_recording(room)
     if success:
-        resp = json_response(True, 0, "Stop recording")
+        resp = json_response(True, 0, "Stop recording at room {}".format(room))
     else:
-        resp = json_response(False, -3, "Current publisher is not recording")
+        resp = json_response(False, -3, "Current room is not recording")
+
+    print("[END]\n")
+    return web.json_response(resp)
+
+
+# check stop command
+async def pause(request):
+    form = await request.post()
+    print(u"[START]\n:Incoming Request: {r}, form: {f}".format(r=request, f=form))
+
+    if 'room' not in form:
+        return json_response(False, -1, "Please input Room number!")
+    room = form["room"]
+    if not room.isdigit():
+        return json_response(False, -1, "Please input correct Room number!")
+
+    success = await client.pause_recording(room)
+    if success:
+        resp = json_response(True, 0, "Pause recording at room {}".format(room))
+    else:
+        resp = json_response(False, -3, "Current room is not recording")
 
     print("[END]\n")
     return web.json_response(resp)
@@ -124,13 +145,13 @@ async def recording_screen(request):
             if not success:
                 resp = json_response(False, -4, "Current screen is recording!")
             else:
-                resp = json_response(True, 0, "Screen start recording")
+                resp = json_response(True, 0, "Screen start recording at room {}".format(room))
         else:
             success = await client.stop_recording_screen(room)
             if not success:
                 resp = json_response(False, -4, "Current screen is NOT recording!")
             else:
-                resp = json_response(True, 0, "Screen stop recording")
+                resp = json_response(True, 0, "Screen stop recording at room {}".format(room))
     else:
         resp = json_response(False, -5, "Please input invalid command, 1 to start recording screen and 2 to stop "
                                         "recording screen")
@@ -167,7 +188,7 @@ async def switch_camera(request):
 
 async def on_shutdown(app):
     print("Web server is shutting down...")
-    # close ws
+    # close client session
     await client.close()
 
 
@@ -191,6 +212,7 @@ if __name__ == "__main__":
     app.router.add_post("/record/configure", configure)
     app.router.add_post("/record/start", start)
     app.router.add_post("/record/stop", stop)
+    app.router.add_post("/record/pause", pause)
     app.router.add_post("/record/screen", recording_screen)
     app.router.add_post("/record/camera", switch_camera)
 
