@@ -1,14 +1,13 @@
 #!/usr/bin/python
 import os
 import argparse
-import asyncio
 
 from aiohttp import web
-from wsclient import WebSocketClient
 from httpclient import HTTPClient
 
 ROOT = os.path.dirname(__file__)
 client = HTTPClient()
+RTP_FORWARD_HOST = ''
 
 
 # common response   
@@ -43,7 +42,7 @@ async def configure(request):
     cloud_class_id = form['cloud_class_id']
     upload_server = form['upload_server']
 
-    success = await client.configure(room, class_id, cloud_class_id, upload_server)
+    success = await client.configure(room, class_id, cloud_class_id, upload_server, RTP_FORWARD_HOST)
     if success:
         resp = json_response(True, 0, "Room {} is configured".format(room))
     else:
@@ -72,7 +71,7 @@ async def start(request):
         if not p.isdigit():
             return json_response(False, -2, "Please input correct publisher identifier!")
 
-    success = await client.start_recording(room, list_str)
+    success = await client.start_recording(room, list_str, RTP_FORWARD_HOST)
     if success:
         resp = json_response(True, 0, "Start recording...")
     else:
@@ -178,7 +177,7 @@ if __name__ == "__main__":
         "--host", default="0.0.0.0", help="Host for HTTP server (default: 0.0.0.0)"
     )
     parser.add_argument(
-        "--janus", default="ws://192.168.5.12:8188", help="Janus gateway address (default: 127.0.0.1:8188)"
+        "--f", default="192.168.5.66", help="Janus RTP forwarding host"
     )
     parser.add_argument(
         "--port", type=int, default=9002, help="Port for HTTP server (default: 9002)"
@@ -195,7 +194,10 @@ if __name__ == "__main__":
     app.router.add_post("/record/screen", recording_screen)
     app.router.add_post("/record/camera", switch_camera)
 
+    RTP_FORWARD_HOST = args.f
+
     try:
+        print("Janus RTP forwarding address is ", args.f)
         web.run_app(
             app, access_log=None, host=args.host, port=args.port
         )

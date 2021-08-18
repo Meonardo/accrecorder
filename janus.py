@@ -105,6 +105,8 @@ class JanusSession:
         self.status: JanusSessionStatus = JanusSessionStatus.Default
         self.loop = None
         self.recording_screen = False
+        self.janus_session_id = None
+        self.janus_handle_id = None
         self.class_id = None
         self.cloud_class_id = None
         self.upload_server = None
@@ -112,7 +114,7 @@ class JanusSession:
 
 # RTP forwarding 参数
 class JanusRTPForwarder:
-    def __init__(self, vp, ap, vpt=102, apt=96):
+    def __init__(self, vp, ap, forwarder, vpt=102, apt=96):
         self.videoport = vp
         self.audioport = ap
         self.videopt = vpt
@@ -121,7 +123,7 @@ class JanusRTPForwarder:
         self.videofmpt = "packetization-mode=1;profile-level-id=42e01f"
         self.audiocodec = "opus/48000/2"
         self.avformat_v = "58.76.100"
-        self.forward_host = "192.168.5.55"
+        self.forward_host = forwarder
         self.name = None
         self.video_stream_id = None
         self.audio_stream_id = None
@@ -187,13 +189,13 @@ class RecordSession:
         print("\nroom folder created at: ", self.folder, "\n")
 
     # 创建 sdp file 给 rtp forwarding -> FFMpeg    
-    def create_sdp(self):
+    def create_sdp(self, forwarder):
         assert self.folder
 
         if self.publisher == SCREEN:
-            self.forwarder = JanusRTPForwarder(vp=random_port(), ap=-1)
+            self.forwarder = JanusRTPForwarder(vp=random_port(), ap=-1, forwarder=forwarder)
         else:
-            self.forwarder = JanusRTPForwarder(vp=random_port(), ap=random_port())
+            self.forwarder = JanusRTPForwarder(vp=random_port(), ap=random_port(), forwarder=forwarder)
 
         # t = time.time()
         name = "{p}_janus.sdp".format(p=self.publisher)

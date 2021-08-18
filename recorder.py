@@ -2,6 +2,10 @@ import os
 import subprocess
 import platform
 import aiohttp
+import random
+import string
+import time
+from threading import Thread
 
 from enum import Enum
 from janus import SCREEN
@@ -10,6 +14,18 @@ from janus import JanusSession
 from aiohttp import FormData
 
 TIME_THRESHOLD = 3
+
+
+# Random filename
+def filename():
+    return "".join(random.choice(string.ascii_letters) for x in range(12))
+
+
+def async_func(f):
+    def wrapper(*args, **kwargs):
+        thr = Thread(target = f, args = args, kwargs = kwargs)
+        thr.start()
+    return wrapper
 
 
 class RecordStatus(Enum):
@@ -33,13 +49,55 @@ class MergeFile:
 
 
 class RecordSegment:
-    def __init__(self, name, room, publisher, begin_time, end_time=None):
+    def __init__(self, name, room, publisher, begin_time, end_time=None, cam_name=None):
         self.name = name
         self.room = room
         self.publisher = publisher
         self.begin_time = begin_time
         self.end_time = end_time
+        self.cam_name = cam_name
         self.is_screen = int(publisher) == SCREEN
+        self.merge_finished = False
+
+    @async_func
+    def merge(self):
+        if not self.is_screen or self.cam_name is None:
+            return
+        if platform.system() == "Darwin":
+            is_linux = False
+            file_dir = "/Users/amdox/File/Combine/.recordings/" + str(self.room)
+        else:
+            file_dir = "/home/h/videos/" + str(self.room)
+            is_linux = True
+        screen_file = file_dir + "/" + self.name
+        cam_file = file_dir + "/" + self.cam_name
+        output_path = file_dir + "/" + filename() + ".ts"
+        if is_linux:
+            p = subprocess.Popen(['ffmpeg',
+                                  '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda',
+                                  '-i', screen_file,
+                                  '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda',
+                                  '-i', cam_file,
+                                  '-filter_complex',
+                                  '[1]scale_npp=640:320:format=nv12[overlay];[0][overlay]overlay_cuda=x=1260:y=740',
+                                  '-codec:v', 'h264_nvenc', '-crf', '17', '-preset', 'p6', '-b:v', '4M',
+                                  '-codec:a', 'copy',
+                                  output_path])
+        else:
+            p = subprocess.Popen(['ffmpeg',
+                                  '-i', screen_file,
+                                  '-i', cam_file,
+                                  '-filter_complex',
+                                  '[1]scale=iw/3:ih/3[pip];[0][pip] overlay=main_w-overlay_w-20:main_h-overlay_h-20',
+                                  '-codec:v', 'h264_videotoolbox', '-preset', 'fast', '-b:v', '4M',
+                                  '-codec:a', 'copy',
+                                  output_path])
+        p.wait()
+        ret = subprocess.run('mv {s} {t}'.format(s=output_path, t=screen_file), shell=True)
+        print(ret)
+        self.merge_finished = True
+
+        return
 
 
 class RecordFile:
@@ -89,6 +147,19 @@ class RecordFile:
     def _join_files(self):
         print("Starting join all the camera files")
 
+        while True:
+            try:
+                merging = next((True for file in self.files if file.is_screen and not file.merge_finished), False)
+                if merging:
+                    time.sleep(1)
+                    print("---------- Wait for all merge tasks -----------")
+                    continue
+                else:
+                    break
+            except StopIteration:
+                time.sleep(1)
+                continue
+
         file_names = list(map(lambda s: "file " + self.folder + "/" + s.name, self.files))
         contents = str.join("\r\n", file_names)
 
@@ -111,12 +182,13 @@ class RecordFile:
         self.status = RecordStatus.Processing
 
     def _transcode(self):
-        audio_codec = 'mp3'
+        audio_codec = 'aac'
         self._join_file_path = self.folder + "/joined.ts"
-        self._output_path = self.folder + "/output.mp4"
+        time_str = time.strftime("%Y-%m-%d_%Hh%Mm%Ss", time.localtime())
+        self._output_path = self.folder + "/" + time_str + ".ts"
         # CLI ffmpeg -i input_file.fmt -c:v copy -c:a aac output.mp4
         p = subprocess.Popen(
-            ['ffmpeg', '-i', self._join_file_path, '-c:v', 'copy', '-c:a', 'copy', self._output_path])
+            ['ffmpeg', '-i', self._join_file_path, '-c:v', 'copy', '-c:a', audio_codec, self._output_path])
         p.wait()
         # CLI ffmpeg -i input.mp4 -ss 00:00:01.000 -vframes 1 output.png
         self._thumbnail_path = self.folder + "/thumbnail.png"
@@ -139,6 +211,11 @@ class RecordFile:
                        content_type='multipart/form-data')
         async with session.post(path, data=data) as response:
             return await response.json()
+
+    def clear_all_files(self):
+        command = "cd {}; rm 1_*; rm 2_*; rm 9_*; rm join*".format(self.folder)
+        ret = subprocess.run(command, shell=True)
+        print(ret)
 
     # 将合并的摄像头文件根据屏幕文件进行分段
     def _separate_files(self):

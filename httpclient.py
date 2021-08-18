@@ -1,5 +1,5 @@
 
-import platform
+import asyncio
 import random
 import string
 import time
@@ -39,8 +39,8 @@ class HTTPClient:
     async def close(self):
         await self.http_session.close()
 
-    async def configure(self, room, class_id, cloud_class_id, upload_server):
-        success = await self.start_forwarding(room, [CAM1, CAM2, SCREEN])
+    async def configure(self, room, class_id, cloud_class_id, upload_server, forwarder):
+        success = await self.start_forwarding(room, [CAM1, CAM2, SCREEN], forwarder)
         if success:
             janus: JanusSession = self.__sessions[room]
             janus.cloud_class_id = cloud_class_id
@@ -49,7 +49,7 @@ class HTTPClient:
         return success
 
     # region Forwarding
-    async def start_forwarding(self, room, publishers):
+    async def start_forwarding(self, room, publishers, forwarder):
         session_id = await self.__login_janus()
         if session_id is not None:
             handle_id = await self.__fetch_janus_handle(session_id)
@@ -59,8 +59,11 @@ class HTTPClient:
                 if session.status != RecordSessionStatus.Default:
                     continue
                 # 创建sdp文件和文件路径
+                janus_session: JanusSession = self.__sessions[room]
+                janus_session.janus_session_id = session_id
+                janus_session.janus_handle_id = handle_id
                 session.create_file_folder()
-                session.create_sdp()
+                session.create_sdp(forwarder)
                 # 发送请求
                 obj = await self.__forwarding_rtp(session_id, handle_id, session)
                 if obj is not None and 'janus' in obj:
@@ -96,6 +99,22 @@ class HTTPClient:
         path = JANUS_HOST + "/" + str(session_id)
         async with self.http_session.post(path, json=payload) as response:
             return await response.json()
+
+    async def __stop_forwarding(self, session: RecordSession):
+        async def _stop_stream(janus, stream):
+            forwarding_obj = session.stop_forwarding_obj(stream)
+            forward_message = {"request": "stop_rtp_forward", "secret": "adminpwd"}.copy()
+            forward_message.update(forwarding_obj)
+            payload = self.__janus_message(forward_message, janus.janus_session_id, janus.janus_handle_id)
+            path = JANUS_HOST + "/" + str(janus.janus_session_id)
+            async with self.http_session.post(path, json=payload) as response:
+                return await response.json()
+
+        janus: JanusSession = self.__sessions[session.room]
+        if session.forwarder.audio_stream_id is not None:
+            await _stop_stream(janus, session.forwarder.audio_stream_id)
+        if session.forwarder.video_stream_id is not None:
+            await _stop_stream(janus, session.forwarder.video_stream_id)
 
     @staticmethod
     def __janus_message(body, session_id, handle_id):
@@ -181,7 +200,7 @@ class HTTPClient:
         return sessions[0]
 
     # 开始录制视频
-    async def start_recording(self, room, publishers):
+    async def start_recording(self, room, publishers, forwarder):
         if room not in self.__sessions:
             return False
         if len(publishers) > 2:
@@ -189,7 +208,7 @@ class HTTPClient:
         forwarding_sessions = self.__active_sessions(room, RecordSessionStatus.Forwarding)
         if len(forwarding_sessions) == 0:
             # 未进行转发的开启转发
-            success = await self.start_forwarding(room, [CAM1, CAM2, SCREEN])
+            success = await self.start_forwarding(room, [CAM1, CAM2, SCREEN], forwarder)
             if success:
                 forwarding_sessions = self.__active_sessions(room, RecordSessionStatus.Forwarding)
             else:
@@ -214,9 +233,7 @@ class HTTPClient:
             self.__record_screen_cam(screen=screen, cam=cam)
         else:
             self.__record_cam(session=sessions[0])
-        janus_session: JanusSession = self.__sessions[room]
-        if janus_session is not None:
-            janus_session.status = JanusSessionStatus.Recording
+        janus.status = JanusSessionStatus.Recording
 
     def __record_screen_cam(self, screen: RecordSession, cam: RecordSession):
         janus_session: JanusSession = self.__sessions[screen.room]
@@ -225,47 +242,35 @@ class HTTPClient:
 
         folder = screen.folder
         begin_time = int(time.time())
-        name = str(screen.publisher) + "_" + str(begin_time) + ".ts"
-        file_path = folder + name
-        sdp_screen = folder + screen.forwarder.name
-        sdp_cam = folder + cam.forwarder.name
 
-        if platform.system() == "Darwin":
-            encoder = "h264_videotoolbox"
-        elif platform.system() == "Linux":
-            encoder = "h264_nvenc"
-        else:
-            encoder = "h264_qsv"
+        s_name = str(screen.publisher) + "_" + str(begin_time) + ".ts"
+        s_file_path = folder + s_name
+        screen_sdp = folder + screen.forwarder.name
 
-        proc = subprocess.Popen(['ffmpeg',
-                                 '-vsync', '0',
-                                 '-protocol_whitelist', 'file,udp,rtp',
-                                 '-hwaccel', 'cuda',
-                                 '-hwaccel_output_format', 'cuda',
-                                 '-i', sdp_screen,
-                                 '-protocol_whitelist', 'file,udp,rtp',
-                                 '-hwaccel', 'cuda',
-                                 '-hwaccel_output_format', 'cuda',
-                                 '-i', sdp_cam,
-                                 '-filter_complex',
-                                 '[1]scale_npp=640:320:format=nv12[overlay]; [0][overlay]overlay_cuda=x=1260:y=740',
-                                 '-codec:v', encoder,
-                                 '-preset', 'p2',
-                                 '-tune', 'll',
-                                 '-b:v', '4M',
-                                 '-bufsize', '1M',
-                                 '-maxrate', '5M',
-                                 # '-crf', '18',
-                                 '-codec:a', 'copy',
-                                 file_path])
-        screen.recorder_pid = proc.pid
+        c_name = str(cam.publisher) + "_" + str(begin_time) + ".ts"
+        c_file_path = folder + c_name
+        cam_sdp = folder + cam.forwarder.name
+
+        proc_c = subprocess.Popen(
+            ['ffmpeg',
+             '-protocol_whitelist', 'file,udp,rtp', '-use_wallclock_as_timestamps', '1',
+             '-i', cam_sdp, '-codec', 'copy', c_file_path,
+             ])
+        cam.recorder_pid = proc_c.pid
+
+        proc_s = subprocess.Popen(
+            ['ffmpeg',
+             '-protocol_whitelist', 'file,udp,rtp', '-use_wallclock_as_timestamps', '1',
+             '-i', screen_sdp, '-codec', 'copy', s_file_path,
+             ])
+        screen.recorder_pid = proc_s.pid
 
         print("Now publisher {p} in the room {r} is recording".format(p=screen.publisher, r=screen.room))
         screen.status = RecordSessionStatus.Recording
         cam.status = RecordSessionStatus.Recording
 
         # 保存文件信息
-        segment = RecordSegment(name=name, begin_time=begin_time, room=screen.room, publisher=screen.publisher)
+        segment = RecordSegment(name=s_name, begin_time=begin_time, room=screen.room, publisher=screen.publisher, cam_name=c_name)
         if screen.room not in self.__files:
             file = RecordFile(room=screen.room, file=segment)
             self.__files[screen.room] = file
@@ -297,6 +302,8 @@ class HTTPClient:
             file: RecordFile = self.__files[session.room]
             file.files.append(segment)
 
+        return file
+
     # 切换摄像头
     async def switch_camera(self, room, publisher):
         if room not in self.__sessions:
@@ -306,14 +313,15 @@ class HTTPClient:
         cam: RecordSession = self.__find_record_session(room, publisher)
         if cam.status == RecordSessionStatus.Recording:
             return False
-        screen = self.__find_record_session(room, SCREEN)
-        if screen is None:
-            return False
+
         janus: JanusSession = self.__sessions[room]
         if janus.recording_screen:
+            screen = self.__find_record_session(room, SCREEN)
+            if screen is None:
+                return False
             self.__stop_recording_session(screen, False)
             recording_cam = self.__recording_cam(room)
-            recording_cam.status = RecordSessionStatus.Forwarding
+            self.__stop_recording_session(recording_cam, False)
             self.__record_screen_cam(screen, cam)
         else:
             recording_cam = self.__recording_cam(room)
@@ -356,11 +364,11 @@ class HTTPClient:
         # 结束录屏但继续录制摄像头
         self.__stop_recording_session(screen, False)
         cam = self.__recording_cam(room)
+        self.__stop_recording_session(cam, False)
+        time.sleep(0.02)
         self.__record_cam(cam)
 
-        janus_session: JanusSession = self.__sessions[screen.room]
-        if janus_session is not None:
-            janus_session.recording_screen = False
+        janus_session.recording_screen = False
 
         return True
 
@@ -384,20 +392,25 @@ class HTTPClient:
         if file is not None:
             segment: RecordSegment = file.files[-1]
             segment.end_time = end_time
+            if segment.publisher == session.publisher:
+                # merge if needed
+                segment.merge()
 
     # 停止录制
     async def stop_recording(self, room):
         if room not in self.__sessions:
             return False
-        sessions = self.__active_sessions(room, RecordSessionStatus.Recording)
+        sessions = self.__active_sessions(room)
         for s in sessions:
+            await self.__stop_forwarding(s)
             self.__stop_recording_session(s)
+
         if len(sessions) == 0:
             return False
         await self.__processing_file(room)
 
         # 清理资源
-        self.__sessions.pop(room, None)
+        # self.__sessions.pop(room, None)
         self.__files.pop(room, None)
 
         return True
@@ -412,6 +425,8 @@ class HTTPClient:
                 print("\n\n\n----------PROCESSING--------\n\n\n")
                 session.status = JanusSessionStatus.Processing
                 file.process()
+                # 清理所有的文件
+                file.clear_all_files()
                 # session.status = JanusSessionStatus.Uploading
                 # resp = await file.upload(session, self.http_session)
                 # if resp is not None:
