@@ -238,7 +238,7 @@ class HTTPClient:
             encoder = "h264_qsv"
 
         proc = subprocess.Popen(['ffmpeg',
-                                 '-vsync', '1',
+                                 '-vsync', '0',
                                  '-protocol_whitelist', 'file,udp,rtp',
                                  '-hwaccel', 'cuda',
                                  '-hwaccel_output_format', 'cuda',
@@ -248,11 +248,10 @@ class HTTPClient:
                                  '-hwaccel_output_format', 'cuda',
                                  '-i', sdp_cam,
                                  '-filter_complex',
-                                 '[1]scale_npp=640:-1:format=nv12[overlay]; [0][overlay]overlay_cuda=x=1260:y=700',
+                                 '[1]scale_npp=640:320:format=nv12[overlay]; [0][overlay]overlay_cuda=x=1260:y=740',
                                  '-codec:v', encoder,
                                  '-preset', 'p2',
                                  '-tune', 'll',
-                                 '-r', '30',
                                  '-b:v', '4M',
                                  '-bufsize', '1M',
                                  '-maxrate', '5M',
