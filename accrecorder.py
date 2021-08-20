@@ -36,19 +36,22 @@ async def configure(request):
         return json_response(False, -1, "Please input Room number!")
     room = form["room"]
     if not room.isdigit():
-        return json_response(False, -1, "Please input correct Room number!")
+        return json_response(False, -3, "Please input correct Room number!")
 
     if 'upload_server' not in form:
-        return json_response(False, -1, "Please input upload server address!")
+        return json_response(False, -2, "Please input upload server address!")
 
-    cloud_class_id = form['cloud_class_id']
+    if 'class_id' not in form:
+        return json_response(False, -4, "Please input class_id!")
+
+    class_id = form['class_id']
     upload_server = form['upload_server']
 
-    success = await client.configure(room, str(room), cloud_class_id, upload_server, RTP_FORWARD_HOST)
+    success = await client.configure(room, class_id, str(room), upload_server, RTP_FORWARD_HOST)
     if success:
         resp = json_response(True, 0, "Room {} is configured".format(room))
     else:
-        resp = json_response(False, -3, "Current room {} already configured".format(room))
+        resp = json_response(False, -6, "Current room {} already configured".format(room))
 
     print("[END]\n")
     return web.json_response(resp)
