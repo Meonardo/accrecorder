@@ -12,7 +12,12 @@ RTP_FORWARD_HOST = ''
 
 # common response   
 def json_response(success, code, data):
-    return {"success": success, "code": code, "data": data}
+    # 满足Windows客户端需求，进行修改
+    if success:
+        state = 1
+    else:
+        state = code
+    return {"state": state, "code": data}
     # return json.dumps(dict, indent = 4).encode(encoding='utf_8')
 
 
@@ -33,16 +38,13 @@ async def configure(request):
     if not room.isdigit():
         return json_response(False, -1, "Please input correct Room number!")
 
-    if 'class_id' not in form or 'cloud_class_id' not in form:
-        return json_response(False, -1, "Please input Class or CloudClass id!")
     if 'upload_server' not in form:
         return json_response(False, -1, "Please input upload server address!")
 
-    class_id = form['class_id']
     cloud_class_id = form['cloud_class_id']
     upload_server = form['upload_server']
 
-    success = await client.configure(room, class_id, cloud_class_id, upload_server, RTP_FORWARD_HOST)
+    success = await client.configure(room, str(room), cloud_class_id, upload_server, RTP_FORWARD_HOST)
     if success:
         resp = json_response(True, 0, "Room {} is configured".format(room))
     else:
