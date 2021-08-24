@@ -80,7 +80,7 @@ class RecordSegment:
                                   '-i', cam_file,
                                   '-filter_complex',
                                   '[1]scale_npp=640:320:format=nv12[overlay];[0][overlay]overlay_cuda=x=1260:y=740',
-                                  '-codec:v', 'h264_nvenc', '-crf', '17', '-preset', 'p6', '-b:v', '4M',
+                                  '-codec:v', 'h264_nvenc', '-crf', '17', '-preset', 'p6', '-b:v', '8M',
                                   '-codec:a', 'copy',
                                   output_path])
         else:
@@ -89,7 +89,7 @@ class RecordSegment:
                                   '-i', cam_file,
                                   '-filter_complex',
                                   '[1]scale=iw/3:ih/3[pip];[0][pip] overlay=main_w-overlay_w-20:main_h-overlay_h-20',
-                                  '-codec:v', 'h264_videotoolbox', '-preset', 'fast', '-b:v', '4M',
+                                  '-codec:v', 'h264_videotoolbox', '-preset', 'fast', '-b:v', '8M',
                                   '-codec:a', 'copy',
                                   output_path])
         p.wait()

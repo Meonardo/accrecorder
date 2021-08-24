@@ -253,15 +253,15 @@ class HTTPClient:
 
         proc_c = subprocess.Popen(
             ['ffmpeg',
-             '-protocol_whitelist', 'file,udp,rtp', '-use_wallclock_as_timestamps', '1',
-             '-i', cam_sdp, '-codec', 'copy', c_file_path,
+             '-protocol_whitelist', 'file,udp,rtp',
+             '-i', cam_sdp, '-c:a', 'mp3', '-c:v', 'copy', c_file_path,
              ])
         cam.recorder_pid = proc_c.pid
-
+        # '-use_wallclock_as_timestamps', '1'
         proc_s = subprocess.Popen(
             ['ffmpeg',
-             '-protocol_whitelist', 'file,udp,rtp', '-use_wallclock_as_timestamps', '1',
-             '-i', screen_sdp, '-codec', 'copy', s_file_path,
+             '-protocol_whitelist', 'file,udp,rtp',
+             '-i', screen_sdp, '-c:a', 'mp3', '-c:v', 'copy', s_file_path,
              ])
         screen.recorder_pid = proc_s.pid
 
@@ -434,7 +434,7 @@ class HTTPClient:
                 session.status = JanusSessionStatus.Processing
                 file.process()
                 # 清理所有的文件
-                file.clear_all_files()
+                # file.clear_all_files()
                 if pause:
                     if room not in self.__pause_files:
                         paused_file = PausedFile(room, file)
