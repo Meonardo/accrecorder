@@ -434,7 +434,7 @@ class HTTPClient:
                 session.status = JanusSessionStatus.Processing
                 file.process()
                 # 清理所有的文件
-                # file.clear_all_files()
+                file.clear_all_files()
                 if pause:
                     if room not in self.__pause_files:
                         paused_file = PausedFile(room, file)
@@ -445,10 +445,10 @@ class HTTPClient:
                 else:
                     if room in self.__pause_files:
                         self.__pause_files.pop(room, None)
-                # session.status = JanusSessionStatus.Uploading
-                # resp = await file.upload(session, self.http_session)
-                # if resp is not None:
-                #     print(resp)
-                #     session.status = JanusSessionStatus.Finished
+                session.status = JanusSessionStatus.Uploading
+                resp = await file.upload(session, self.http_session)
+                if resp is not None:
+                    print(resp)
+                    session.status = JanusSessionStatus.Finished
 
     # endregion
