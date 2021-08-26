@@ -196,6 +196,22 @@ class RecordFile:
         async with session.post(path, data=data) as response:
             return await response.json()
 
+    # 获取上传文件的信息，如：时长和文件大小
+    def fetch_filesize(self):
+        import json
+
+        file_path = self._output_path
+        result = subprocess.check_output(
+            f'ffprobe -v quiet -print_format json -show_format "{file_path}"',
+            shell=True).decode()
+        print(result)
+        format_info = json.loads(result)['format']
+        print(format_info)
+
+        duration = format_info['duration']
+        file_size = format_info['size']
+        return duration, file_size
+
     # 清除所有辅助文件， 仅保留截图和输出视频
     def clear_all_files(self):
         command = "cd {}; rm 1_*; rm 2_*; rm 9_*; rm join*".format(self.folder)

@@ -1,6 +1,7 @@
 #!/usr/bin/python
 import os
 import argparse
+import datetime
 
 from aiohttp import web
 from httpclient import HTTPClient
@@ -19,7 +20,8 @@ def json_response(success, code, data):
         state = code
     resp = {"state": state, "code": data}
 
-    print("[END]\n")
+    time = datetime.datetime.utcnow().isoformat(sep=' ', timespec='milliseconds')
+    print("[END] {}\n".format(time))
     return web.json_response(resp)
     # return json.dumps(dict, indent = 4).encode(encoding='utf_8')
 
@@ -33,7 +35,8 @@ async def index(request):
 # Configure record server per room
 async def configure(request):
     form = await request.post()
-    print(u"[START]\n:Incoming Request: {r}, form: {f}".format(r=request, f=form))
+    time = datetime.datetime.utcnow().isoformat(sep=' ', timespec='milliseconds')
+    print(u"[START] {time}\n:Incoming Request: {r}, form: {f}".format(time=time, r=request, f=form))
 
     if 'room' not in form:
         return json_response(False, -1, "Please input Room number!")
@@ -66,7 +69,8 @@ async def configure(request):
 # Reset record session in case of client had unexceptional satiation
 async def reset(request):
     form = await request.post()
-    print(u"[START]\n:Incoming Request: {r}, form: {f}".format(r=request, f=form))
+    time = datetime.datetime.utcnow().isoformat(sep=' ', timespec='milliseconds')
+    print(u"[START] {time}\n:Incoming Request: {r}, form: {f}".format(time=time, r=request, f=form))
 
     if 'room' not in form:
         return json_response(False, -1, "Please input Room number!")
@@ -84,7 +88,8 @@ async def reset(request):
 # check start command
 async def start(request):
     form = await request.post()
-    print(u"[START]\n:Incoming Request: {r}, form: {f}".format(r=request, f=form))
+    time = datetime.datetime.utcnow().isoformat(sep=' ', timespec='milliseconds')
+    print(u"[START] {time}\n:Incoming Request: {r}, form: {f}".format(time=time, r=request, f=form))
 
     if 'room' not in form:
         return json_response(False, -1, "Please input Room number!")
@@ -110,7 +115,8 @@ async def start(request):
 # check stop command
 async def stop(request):
     form = await request.post()
-    print(u"[START]\n:Incoming Request: {r}, form: {f}".format(r=request, f=form))
+    time = datetime.datetime.utcnow().isoformat(sep=' ', timespec='milliseconds')
+    print(u"[START] {time}\n:Incoming Request: {r}, form: {f}".format(time=time, r=request, f=form))
 
     if 'room' not in form:
         return json_response(False, -1, "Please input Room number!")
@@ -128,7 +134,8 @@ async def stop(request):
 # check stop command
 async def pause(request):
     form = await request.post()
-    print(u"[START]\n:Incoming Request: {r}, form: {f}".format(r=request, f=form))
+    time = datetime.datetime.utcnow().isoformat(sep=' ', timespec='milliseconds')
+    print(u"[START] {time}\n:Incoming Request: {r}, form: {f}".format(time=time, r=request, f=form))
 
     if 'room' not in form:
         return json_response(False, -1, "Please input Room number!")
@@ -145,7 +152,8 @@ async def pause(request):
 
 async def recording_screen(request):
     form = await request.post()
-    print(u"[START]\n:Incoming Request: {r}, form: {f}".format(r=request, f=form))
+    time = datetime.datetime.utcnow().isoformat(sep=' ', timespec='milliseconds')
+    print(u"[START] {time}\n:Incoming Request: {r}, form: {f}".format(time=time, r=request, f=form))
 
     if 'room' not in form:
         return json_response(False, -1, "Please input Room number!")
@@ -180,7 +188,8 @@ async def recording_screen(request):
 # 切换摄像头
 async def switch_camera(request):
     form = await request.post()
-    print(u"[START]\n:Incoming Request: {r}, form: {f}".format(r=request, f=form))
+    time = datetime.datetime.utcnow().isoformat(sep=' ', timespec='milliseconds')
+    print(u"[START] {time}\n:Incoming Request: {r}, form: {f}".format(time=time, r=request, f=form))
 
     if 'room' not in form:
         return json_response(False, -1, "Please input Room number!")
