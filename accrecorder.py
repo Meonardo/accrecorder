@@ -17,7 +17,10 @@ def json_response(success, code, data):
         state = 1
     else:
         state = code
-    return {"state": state, "code": data}
+    resp = {"state": state, "code": data}
+
+    print("[END]\n")
+    return web.json_response(resp)
     # return json.dumps(dict, indent = 4).encode(encoding='utf_8')
 
 
@@ -44,17 +47,38 @@ async def configure(request):
     if 'class_id' not in form:
         return json_response(False, -4, "Please input class_id!")
 
+    if 'janus' not in form:
+        return json_response(False, -4, "Please input Janus HTTP transport address, for example: http://192.168.5.12:8088")
+    janus = str(form['janus'])
+    if not janus.startswith("http"):
+        return json_response(False, -5,
+                             "Please input correct Janus HTTP transport address, for example: http://192.168.5.12:8088")
+
     class_id = form['class_id']
     upload_server = form['upload_server']
-
-    success = await client.configure(room, class_id, str(room), upload_server, RTP_FORWARD_HOST)
+    success = await client.configure(room, class_id, str(room), upload_server, RTP_FORWARD_HOST, janus)
     if success:
-        resp = json_response(True, 0, "Room {} is configured".format(room))
+        return json_response(True, 0, "Room {} is configured".format(room))
     else:
-        resp = json_response(False, -6, "Current room {} already configured".format(room))
+        return json_response(False, -6, "Current room {} already configured".format(room))
 
-    print("[END]\n")
-    return web.json_response(resp)
+
+# Reset record session in case of client had unexceptional satiation
+async def reset(request):
+    form = await request.post()
+    print(u"[START]\n:Incoming Request: {r}, form: {f}".format(r=request, f=form))
+
+    if 'room' not in form:
+        return json_response(False, -1, "Please input Room number!")
+    room = form["room"]
+    if not room.isdigit():
+        return json_response(False, -2, "Please input correct Room number!")
+
+    success = await client.reset(room)
+    if success:
+        return json_response(True, 0, "Room {} is reset".format(room))
+    else:
+        return json_response(False, -3, "Current room {} not exist!".format(room))
 
 
 # check start command
@@ -78,12 +102,9 @@ async def start(request):
 
     success = await client.start_recording(room, list_str, RTP_FORWARD_HOST)
     if success:
-        resp = json_response(True, 0, "Start recording at room {}".format(room))
+        return json_response(True, 0, "Start recording at room {}".format(room))
     else:
-        resp = json_response(False, -3, "Current room {r} is recording".format(r=room))
-
-    print("[END]\n")
-    return web.json_response(resp)
+        return json_response(False, -3, "Current room {r} is recording".format(r=room))
 
 
 # check stop command
@@ -99,12 +120,9 @@ async def stop(request):
 
     success = await client.stop_recording(room)
     if success:
-        resp = json_response(True, 0, "Stop recording at room {}".format(room))
+        return json_response(True, 0, "Stop recording at room {}".format(room))
     else:
-        resp = json_response(False, -3, "Current room is not recording")
-
-    print("[END]\n")
-    return web.json_response(resp)
+        return json_response(False, -3, "Current room is not recording")
 
 
 # check stop command
@@ -120,12 +138,9 @@ async def pause(request):
 
     success = await client.pause_recording(room)
     if success:
-        resp = json_response(True, 0, "Pause recording at room {}".format(room))
+        return json_response(True, 0, "Pause recording at room {}".format(room))
     else:
-        resp = json_response(False, -3, "Current room is not recording")
-
-    print("[END]\n")
-    return web.json_response(resp)
+        return json_response(False, -3, "Current room is not recording")
 
 
 async def recording_screen(request):
@@ -148,20 +163,18 @@ async def recording_screen(request):
         if cmd == 1:
             success = await client.start_recording_screen(room)
             if not success:
-                resp = json_response(False, -4, "Current screen is recording!")
+                return json_response(False, -4, "Recording screen does not available currently!")
             else:
-                resp = json_response(True, 0, "Screen start recording at room {}".format(room))
+                return json_response(True, 0, "Screen start recording at room {}".format(room))
         else:
             success = await client.stop_recording_screen(room)
             if not success:
-                resp = json_response(False, -4, "Current screen is NOT recording!")
+                return json_response(False, -4, "Current screen is NOT recording!")
             else:
-                resp = json_response(True, 0, "Screen stop recording at room {}".format(room))
+                return json_response(True, 0, "Screen stop recording at room {}".format(room))
     else:
-        resp = json_response(False, -5, "Please input invalid command, 1 to start recording screen and 2 to stop "
+        return json_response(False, -5, "Please input invalid command, 1 to start recording screen and 2 to stop "
                                         "recording screen")
-    print("[END]\n")
-    return web.json_response(resp)
 
 
 # 切换摄像头
@@ -173,7 +186,7 @@ async def switch_camera(request):
         return json_response(False, -1, "Please input Room number!")
     room = form["room"]
     if not room.isdigit():
-        resp = json_response(False, -1, "Please input correct Room number!")
+        return json_response(False, -1, "Please input correct Room number!")
 
     if 'publisher' not in form:
         return json_response(False, -2, "Please input publisher id!")
@@ -183,12 +196,9 @@ async def switch_camera(request):
 
     success = await client.switch_camera(room, int(publisher))
     if success:
-        resp = json_response(True, 0, "Switch to CAM{}".format(publisher))
+        return json_response(True, 0, "Switch to CAM{}".format(publisher))
     else:
-        resp = json_response(False, -3, "You already have record CAM{}".format(publisher))
-
-    print("[END]\n")
-    return web.json_response(resp)
+        return json_response(False, -3, "You already have record CAM{}".format(publisher))
 
 
 async def on_shutdown(app):
@@ -215,6 +225,7 @@ if __name__ == "__main__":
     app.router.add_get("/", index)
 
     app.router.add_post("/record/configure", configure)
+    app.router.add_post("/record/reset", reset)
     app.router.add_post("/record/start", start)
     app.router.add_post("/record/stop", stop)
     app.router.add_post("/record/pause", pause)

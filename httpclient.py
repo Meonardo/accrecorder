@@ -15,6 +15,8 @@ JANUS_HOST = 'http://192.168.5.12:8088/janus'
 # static publisher IDs
 CAM1 = 1
 CAM2 = 2
+CAM3 = 3
+CAM4 = 4
 SCREEN = 9
 RECORDER = 911
 
@@ -39,7 +41,9 @@ class HTTPClient:
     async def close(self):
         await self.http_session.close()
 
-    async def configure(self, room, class_id, cloud_class_id, upload_server, forwarder):
+    async def configure(self, room, class_id, cloud_class_id, upload_server, forwarder, janus):
+        global JANUS_HOST
+        JANUS_HOST = janus + "/janus"
         success = await self.start_forwarding(room, [CAM1, CAM2, SCREEN], forwarder)
         if success:
             janus: JanusSession = self.__sessions[room]
@@ -47,6 +51,24 @@ class HTTPClient:
             janus.class_id = class_id
             janus.upload_server = upload_server
         return success
+
+    # reset
+    async def reset(self, room):
+        if room not in self.__sessions:
+            return False
+        self.__sessions.pop(room, None)
+
+        keys = list(map(lambda x: str(room) + "-" + str(x), [CAM1, CAM2]))
+        for k in keys:
+            if k in self.__record_sessions:
+                self.__record_sessions.pop(k, None)
+
+        if room in self.__files:
+            self.__files.pop(room, None)
+        if room in self.__pause_files:
+            self.__pause_files.pop(room, None)
+
+        return True
 
     # region Forwarding
     async def start_forwarding(self, room, publishers, forwarder):
@@ -333,6 +355,8 @@ class HTTPClient:
 
     # 开始录制屏幕
     async def start_recording_screen(self, room):
+        if room not in self.__sessions:
+            return False
         janus_session: JanusSession = self.__sessions[room]
         if janus_session is None:
             return False
@@ -415,10 +439,10 @@ class HTTPClient:
 
         if len(sessions) == 0:
             return False
-        await self.__processing_file(room)
+        await self.__processing_file(room, pause)
 
         # 清理资源
-        # self.__sessions.pop(room, None)
+        self.__sessions.pop(room, None)
         self.__files.pop(room, None)
 
         return True
