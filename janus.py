@@ -130,7 +130,7 @@ class RecordSession:
         if platform.system() == "Darwin":
             file_dir = "/Users/amdox/File/Combine/.recordings/" + str(self.room)
         else:
-            file_dir = "/home/h/videos/" + str(self.room)
+            file_dir = "/home/hd/recorder/videos/recordings/" + str(self.room)
         Path(file_dir).mkdir(parents=True, exist_ok=True)
         self.folder = file_dir + "/"
 

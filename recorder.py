@@ -67,7 +67,7 @@ class RecordSegment:
             is_linux = False
             file_dir = "/Users/amdox/File/Combine/.recordings/" + str(self.room)
         else:
-            file_dir = "/home/h/videos/" + str(self.room)
+            file_dir = "/home/hd/recorder/videos/recordings/" + str(self.room)
             is_linux = True
         screen_file = file_dir + "/" + self.name
         cam_file = file_dir + "/" + self.cam_name
@@ -108,7 +108,7 @@ class RecordFile:
         if platform.system() == "Darwin":
             file_dir = "/Users/amdox/File/Combine/.recordings/"
         else:
-            file_dir = "/home/h/videos/"
+            file_dir = "/home/hd/recorder/videos/recordings/"
         self.folder = file_dir + str(self.room)
         self._join_file_path = None
         self._file_cuts = None
