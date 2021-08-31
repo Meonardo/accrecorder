@@ -191,7 +191,7 @@ class RecordSession:
                 "audio_pt": self.forwarder.audiopt,
                 "video_pt": self.forwarder.videopt,
                 "publisher_id": int(self.publisher),
-                "room": self.room,
+                "room": int(self.room),
             }
         return {
             "stream_id": int(stream),
@@ -200,7 +200,7 @@ class RecordSession:
             "audio_pt": self.forwarder.audiopt,
             "video_pt": self.forwarder.videopt,
             "publisher_id": int(self.publisher),
-            "room": self.room,
+            "room": int(self.room),
         }
 
     # 回收本机的 RTP forwarding listen port
