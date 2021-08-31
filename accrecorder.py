@@ -20,7 +20,8 @@ def json_response(success, code, data):
         state = code
     resp = {"state": state, "code": data}
 
-    time = datetime.datetime.utcnow().isoformat(sep=' ', timespec='milliseconds')
+    time = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().isoformat(sep=' ',
+                                                                                           timespec='milliseconds')
     print("[END] {}\n".format(time))
     return web.json_response(resp)
     # return json.dumps(dict, indent = 4).encode(encoding='utf_8')
@@ -35,7 +36,8 @@ async def index(request):
 # Configure record server per room
 async def configure(request):
     form = await request.post()
-    time = datetime.datetime.utcnow().isoformat(sep=' ', timespec='milliseconds')
+    time = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().isoformat(sep=' ',
+                                                                                           timespec='milliseconds')
     print(u"[START] {time}\n:Incoming Request: {r}, form: {f}".format(time=time, r=request, f=form))
 
     if 'room' not in form:
@@ -69,7 +71,8 @@ async def configure(request):
 # Reset record session in case of client had unexceptional satiation
 async def reset(request):
     form = await request.post()
-    time = datetime.datetime.utcnow().isoformat(sep=' ', timespec='milliseconds')
+    time = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().isoformat(sep=' ',
+                                                                                           timespec='milliseconds')
     print(u"[START] {time}\n:Incoming Request: {r}, form: {f}".format(time=time, r=request, f=form))
 
     if 'room' not in form:
@@ -88,7 +91,8 @@ async def reset(request):
 # check start command
 async def start(request):
     form = await request.post()
-    time = datetime.datetime.utcnow().isoformat(sep=' ', timespec='milliseconds')
+    time = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().isoformat(sep=' ',
+                                                                                           timespec='milliseconds')
     print(u"[START] {time}\n:Incoming Request: {r}, form: {f}".format(time=time, r=request, f=form))
 
     if 'room' not in form:
@@ -115,7 +119,8 @@ async def start(request):
 # check stop command
 async def stop(request):
     form = await request.post()
-    time = datetime.datetime.utcnow().isoformat(sep=' ', timespec='milliseconds')
+    time = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().isoformat(sep=' ',
+                                                                                           timespec='milliseconds')
     print(u"[START] {time}\n:Incoming Request: {r}, form: {f}".format(time=time, r=request, f=form))
 
     if 'room' not in form:
@@ -134,7 +139,8 @@ async def stop(request):
 # check stop command
 async def pause(request):
     form = await request.post()
-    time = datetime.datetime.utcnow().isoformat(sep=' ', timespec='milliseconds')
+    time = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().isoformat(sep=' ',
+                                                                                           timespec='milliseconds')
     print(u"[START] {time}\n:Incoming Request: {r}, form: {f}".format(time=time, r=request, f=form))
 
     if 'room' not in form:
@@ -152,7 +158,8 @@ async def pause(request):
 
 async def recording_screen(request):
     form = await request.post()
-    time = datetime.datetime.utcnow().isoformat(sep=' ', timespec='milliseconds')
+    time = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().isoformat(sep=' ',
+                                                                                           timespec='milliseconds')
     print(u"[START] {time}\n:Incoming Request: {r}, form: {f}".format(time=time, r=request, f=form))
 
     if 'room' not in form:
@@ -188,7 +195,8 @@ async def recording_screen(request):
 # 切换摄像头
 async def switch_camera(request):
     form = await request.post()
-    time = datetime.datetime.utcnow().isoformat(sep=' ', timespec='milliseconds')
+    time = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().isoformat(sep=' ',
+                                                                                           timespec='milliseconds')
     print(u"[START] {time}\n:Incoming Request: {r}, form: {f}".format(time=time, r=request, f=form))
 
     if 'room' not in form:
