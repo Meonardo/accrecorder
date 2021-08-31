@@ -35,7 +35,7 @@ PORTS = []
 
 
 def random_port():
-    p = random.randint(20001, 50000)
+    p = random.randint(20001, 30000)
     if p not in PORTS:
         PORTS.append(p)
         return p

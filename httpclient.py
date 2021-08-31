@@ -409,8 +409,8 @@ class HTTPClient:
         if remove:
             session.status = RecordSessionStatus.Stopped
             key = str(session.room) + "-" + str(session.publisher)
-            self.__record_sessions.pop(key, None)
             session.clean_ports()
+            self.__record_sessions.pop(key, None)
         else:
             session.status = RecordSessionStatus.Forwarding
 
