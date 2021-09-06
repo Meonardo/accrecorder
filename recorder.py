@@ -72,7 +72,7 @@ class RecordSegment:
         cam_file = file_dir + "/" + self.cam_name
         output_path = file_dir + "/" + filename() + ".ts"
         if is_linux:
-            p = subprocess.Popen(['ffmpeg',
+            p = subprocess.Popen(['ffmpeg', '-hide_banner', '-loglevel', 'error',
                                   '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda',
                                   '-i', screen_file,
                                   '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda',
@@ -83,7 +83,7 @@ class RecordSegment:
                                   '-codec:a', 'copy',
                                   output_path])
         else:
-            p = subprocess.Popen(['ffmpeg',
+            p = subprocess.Popen(['ffmpeg', '-hide_banner', '-loglevel', 'error',
                                   '-i', screen_file,
                                   '-i', cam_file,
                                   '-filter_complex',

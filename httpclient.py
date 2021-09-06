@@ -293,14 +293,14 @@ class HTTPClient:
         cam_sdp = folder + cam.forwarder.name
 
         proc_c = subprocess.Popen(
-            ['ffmpeg',
+            ['ffmpeg', '-hide_banner', '-loglevel', 'error',
              '-protocol_whitelist', 'file,udp,rtp',
              '-i', cam_sdp, '-c:a', 'mp3', '-c:v', 'copy', c_file_path,
              ])
         cam.recorder_pid = proc_c.pid
         # '-use_wallclock_as_timestamps', '1'
         proc_s = subprocess.Popen(
-            ['ffmpeg',
+            ['ffmpeg', '-hide_banner', '-loglevel', 'error',
              '-protocol_whitelist', 'file,udp,rtp',
              '-i', screen_sdp, '-c:a', 'mp3', '-c:v', 'copy', s_file_path,
              ])
@@ -329,7 +329,7 @@ class HTTPClient:
         sdp = folder + session.forwarder.name
 
         proc = subprocess.Popen(
-            ['ffmpeg', '-protocol_whitelist', 'file,udp,rtp', '-use_wallclock_as_timestamps', '1', '-i', sdp, '-c',
+            ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-protocol_whitelist', 'file,udp,rtp', '-use_wallclock_as_timestamps', '1', '-i', sdp, '-c',
              'copy', file_path])
         session.recorder_pid = proc.pid
 
