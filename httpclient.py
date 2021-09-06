@@ -238,8 +238,10 @@ class HTTPClient:
     # 开始录制视频
     async def start_recording(self, room, publishers, forwarder):
         if room not in self.__sessions:
+            print("Room{} not configure yet".format(room))
             return False
         if len(publishers) > 2:
+            print("Room{}, recording number invalid.".format(room))
             return False
         forwarding_sessions = self.__active_sessions(room, RecordSessionStatus.Forwarding)
         if len(forwarding_sessions) == 0:
@@ -248,6 +250,7 @@ class HTTPClient:
             if success:
                 forwarding_sessions = self.__active_sessions(room, RecordSessionStatus.Forwarding)
             else:
+                print("Room{}, RTP forwarding failed.".format(room))
                 return False
 
         available = []
@@ -256,6 +259,7 @@ class HTTPClient:
                 if str(p) == str(p1.publisher):
                     available.append(p1)
 
+        print("Room{}, is launching.".format(room))
         self.__launch_recorder(room, available)
 
         return True
@@ -272,6 +276,7 @@ class HTTPClient:
         janus.status = JanusSessionStatus.Recording
 
     def __record_screen_cam(self, screen: RecordSession, cam: RecordSession):
+        print("Room{r}, recording screen & cam{c}".format(r=screen.room, c=cam.publisher))
         janus_session: JanusSession = self.__sessions[screen.room]
         if janus_session is not None:
             janus_session.recording_screen = True
@@ -316,6 +321,7 @@ class HTTPClient:
             file.files.append(segment)
 
     def __record_cam(self, session: RecordSession):
+        print("Room{r}, recording cam{c}".format(r=session.room, c=session.publisher))
         folder = session.folder
         begin_time = int(time.time())
         name = str(session.publisher) + "_" + str(begin_time) + ".ts"
@@ -344,11 +350,14 @@ class HTTPClient:
     # 切换摄像头
     async def switch_camera(self, room, publisher):
         if room not in self.__sessions:
+            print("Room{} not configure yet".format(room))
             return False
         if publisher not in [CAM1, CAM2]:
+            print("Room{r}, CAM{c} is invalidate".format(r=room, c=publisher))
             return False
         cam: RecordSession = self.__find_record_session(room, publisher)
         if cam.status == RecordSessionStatus.Recording:
+            print("Room{} is not recording".format(room))
             return False
 
         janus: JanusSession = self.__sessions[room]
@@ -370,6 +379,7 @@ class HTTPClient:
     # 开始录制屏幕
     async def start_recording_screen(self, room):
         if room not in self.__sessions:
+            print("Room{} not configure yet".format(room))
             return False
         janus_session: JanusSession = self.__sessions[room]
         if janus_session is None:
@@ -391,14 +401,17 @@ class HTTPClient:
     # 结束录制屏幕
     async def stop_recording_screen(self, room):
         if room not in self.__sessions:
+            print("Room{} not configure yet".format(room))
             return False
         janus_session: JanusSession = self.__sessions[room]
         if janus_session is None:
             return False
         if not janus_session.recording_screen:
+            print("Room{}, Screen is not recording yet".format(room))
             return False
         screen = self.__find_record_session(room, SCREEN)
         if screen is None:
+            print("Room{}, Can not find screen session".format(room))
             return False
         # 结束录屏但继续录制摄像头
         self.__stop_recording_session(screen, False)
@@ -446,8 +459,10 @@ class HTTPClient:
     # 停止录制
     async def stop_recording(self, room, pause=False):
         if room not in self.__sessions:
+            print("Room{} not configure yet".format(room))
             return False
         if room not in self.__files:
+            print("Room{}, file not found".format(room))
             return False
         sessions = self.__active_sessions(room)
         for s in sessions:
