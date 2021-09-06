@@ -5,6 +5,7 @@ import subprocess
 import signal
 import os
 import aiohttp
+import datetime
 from aiohttp import ClientSession
 
 from janus import JanusSession, JanusSessionStatus, RecordSession, RecordSessionStatus
@@ -19,6 +20,19 @@ CAM3 = 3
 CAM4 = 4
 SCREEN = 9
 RECORDER = 911
+
+
+old_print = print
+
+
+def timestamped_print(*args, **kwargs):
+    time_str = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().isoformat(
+        sep=' ',
+        timespec='milliseconds')
+    old_print(time_str, *args, **kwargs)
+
+
+print = timestamped_print
 
 
 # Random Transaction ID
@@ -422,6 +436,7 @@ class HTTPClient:
             segment.end_time = end_time
             if segment.publisher == session.publisher:
                 # merge if needed
+                print("Starting merging...")
                 segment.merge()
 
     # 暂停录制
@@ -431,6 +446,8 @@ class HTTPClient:
     # 停止录制
     async def stop_recording(self, room, pause=False):
         if room not in self.__sessions:
+            return False
+        if room not in self.__files:
             return False
         sessions = self.__active_sessions(room)
         for s in sessions:

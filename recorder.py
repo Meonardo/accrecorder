@@ -9,7 +9,6 @@ from threading import Thread
 
 from enum import Enum
 from janus import SCREEN
-from pathlib import Path
 from janus import JanusSession
 from aiohttp import FormData
 

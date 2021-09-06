@@ -1,10 +1,9 @@
 #!/usr/bin/python
 import os
 import argparse
-import datetime
 
 from aiohttp import web
-from httpclient import HTTPClient
+from httpclient import HTTPClient, print
 
 ROOT = os.path.dirname(__file__)
 client = HTTPClient()
@@ -19,12 +18,9 @@ def json_response(success, code, data):
     else:
         state = code
     resp = {"state": state, "code": data}
-
-    time = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().isoformat(sep=' ',
-                                                                                           timespec='milliseconds')
-    print("[END] {}\n".format(time))
+    print("Send response: ", resp)
+    print("[END] \n")
     return web.json_response(resp)
-    # return json.dumps(dict, indent = 4).encode(encoding='utf_8')
 
 
 # index
@@ -36,9 +32,7 @@ async def index(request):
 # Configure record server per room
 async def configure(request):
     form = await request.post()
-    time = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().isoformat(sep=' ',
-                                                                                           timespec='milliseconds')
-    print(u"[START] {time}\n:Incoming Request: {r}, form: {f}".format(time=time, r=request, f=form))
+    print(u"[START]\n:Incoming Request: {r}, form: {f}".format(r=request, f=form))
 
     if 'room' not in form:
         return json_response(False, -1, "Please input Room number!")
@@ -71,9 +65,7 @@ async def configure(request):
 # Reset record session in case of client had unexceptional satiation
 async def reset(request):
     form = await request.post()
-    time = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().isoformat(sep=' ',
-                                                                                           timespec='milliseconds')
-    print(u"[START] {time}\n:Incoming Request: {r}, form: {f}".format(time=time, r=request, f=form))
+    print(u"[START]\n:Incoming Request: {r}, form: {f}".format(r=request, f=form))
 
     if 'room' not in form:
         return json_response(False, -1, "Please input Room number!")
@@ -91,9 +83,7 @@ async def reset(request):
 # check start command
 async def start(request):
     form = await request.post()
-    time = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().isoformat(sep=' ',
-                                                                                           timespec='milliseconds')
-    print(u"[START] {time}\n:Incoming Request: {r}, form: {f}".format(time=time, r=request, f=form))
+    print(u"[START]\n:Incoming Request: {r}, form: {f}".format(r=request, f=form))
 
     if 'room' not in form:
         return json_response(False, -1, "Please input Room number!")
@@ -119,9 +109,7 @@ async def start(request):
 # check stop command
 async def stop(request):
     form = await request.post()
-    time = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().isoformat(sep=' ',
-                                                                                           timespec='milliseconds')
-    print(u"[START] {time}\n:Incoming Request: {r}, form: {f}".format(time=time, r=request, f=form))
+    print(u"[START]\n:Incoming Request: {r}, form: {f}".format(r=request, f=form))
 
     if 'room' not in form:
         return json_response(False, -1, "Please input Room number!")
@@ -139,9 +127,7 @@ async def stop(request):
 # check stop command
 async def pause(request):
     form = await request.post()
-    time = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().isoformat(sep=' ',
-                                                                                           timespec='milliseconds')
-    print(u"[START] {time}\n:Incoming Request: {r}, form: {f}".format(time=time, r=request, f=form))
+    print(u"[START]\n:Incoming Request: {r}, form: {f}".format(r=request, f=form))
 
     if 'room' not in form:
         return json_response(False, -1, "Please input Room number!")
@@ -158,15 +144,13 @@ async def pause(request):
 
 async def recording_screen(request):
     form = await request.post()
-    time = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().isoformat(sep=' ',
-                                                                                           timespec='milliseconds')
-    print(u"[START] {time}\n:Incoming Request: {r}, form: {f}".format(time=time, r=request, f=form))
+    print(u"[START]\n:Incoming Request: {r}, form: {f}".format(r=request, f=form))
 
     if 'room' not in form:
         return json_response(False, -1, "Please input Room number!")
     room = form["room"]
     if not room.isdigit():
-        resp = json_response(False, -1, "Please input correct Room number!")
+        return json_response(False, -1, "Please input correct Room number!")
     # 1 start recording screen, 2 stop recording screen, other commands are invalidate
     if 'cmd' not in form:
         return json_response(False, -2, "Please input command!")
@@ -195,9 +179,7 @@ async def recording_screen(request):
 # 切换摄像头
 async def switch_camera(request):
     form = await request.post()
-    time = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().isoformat(sep=' ',
-                                                                                           timespec='milliseconds')
-    print(u"[START] {time}\n:Incoming Request: {r}, form: {f}".format(time=time, r=request, f=form))
+    print(u"[START]\n:Incoming Request: {r}, form: {f}".format(r=request, f=form))
 
     if 'room' not in form:
         return json_response(False, -1, "Please input Room number!")
@@ -230,7 +212,7 @@ if __name__ == "__main__":
         "--host", default="0.0.0.0", help="Host for HTTP server (default: 0.0.0.0)"
     )
     parser.add_argument(
-        "--f", default="192.168.5.66", help="Janus RTP forwarding host"
+        "--f", default="192.168.5.48", help="Janus RTP forwarding host"
     )
     parser.add_argument(
         "--port", type=int, default=9002, help="Port for HTTP server (default: 9002)"
@@ -252,6 +234,7 @@ if __name__ == "__main__":
     RTP_FORWARD_HOST = args.f
 
     try:
+        print("Starting web server...")
         print("Janus RTP forwarding address is ", args.f)
         web.run_app(
             app, access_log=None, host=args.host, port=args.port
@@ -259,6 +242,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         pass
     finally:
-        print("Stopping now!")
+        print("Web server stopped.")
 
 
