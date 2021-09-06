@@ -91,6 +91,8 @@ class RecordSegment:
                                   '-codec:v', 'h264_videotoolbox', '-preset', 'fast', '-b:v', '8M',
                                   '-codec:a', 'copy',
                                   output_path])
+
+        print("Starting merging {s} & {c}...".format(s=self.name, c=self.cam_name))
         p.wait()
         ret = subprocess.run('mv {s} {t}'.format(s=output_path, t=screen_file), shell=True)
         print(ret)
@@ -157,7 +159,7 @@ class RecordFile:
 
         self._join_file_path = self.folder + "/joined.ts"
         p = subprocess.Popen(
-            ['ffmpeg', '-f', 'concat', '-safe', '0', '-i', cmd_file_path, '-c', 'copy', self._join_file_path])
+            ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', cmd_file_path, '-c', 'copy', self._join_file_path])
         p.wait()
 
         self.status = RecordStatus.Processing
@@ -170,12 +172,12 @@ class RecordFile:
         self._output_path = self.folder + "/" + "output_{}.mp4".format(time_str)
         # CLI ffmpeg -i input_file.fmt -c:v copy -c:a aac output.mp4
         p = subprocess.Popen(
-            ['ffmpeg', '-i', self._join_file_path, '-c:v', 'copy', '-c:a', audio_codec, self._output_path])
+            ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-i', self._join_file_path, '-c:v', 'copy', '-c:a', audio_codec, self._output_path])
         p.wait()
         # CLI ffmpeg -i input.mp4 -ss 00:00:01.000 -vframes 1 output.png
         self._thumbnail_path = self.folder + "/thumbnail_{}.png".format(time_str)
         p = subprocess.Popen(
-            ['ffmpeg', '-i', self._output_path, '-ss', '00:00:05.000', '-vframes', '1', self._thumbnail_path])
+            ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-i', self._output_path, '-ss', '00:00:05.000', '-vframes', '1', self._thumbnail_path])
         p.wait()
 
     # 上传操作

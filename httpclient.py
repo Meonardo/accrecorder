@@ -298,6 +298,8 @@ class HTTPClient:
              '-i', cam_sdp, '-c:a', 'mp3', '-c:v', 'copy', c_file_path,
              ])
         cam.recorder_pid = proc_c.pid
+        print("Now publisher {p} in the room {r} is recording...\nFFmpeg subprocess pid: {pid}".format(
+            p=cam.publisher, r=cam.room, pid=proc_c.pid))
         # '-use_wallclock_as_timestamps', '1'
         proc_s = subprocess.Popen(
             ['ffmpeg', '-hide_banner', '-loglevel', 'error',
@@ -306,7 +308,8 @@ class HTTPClient:
              ])
         screen.recorder_pid = proc_s.pid
 
-        print("Now publisher {p} in the room {r} is recording".format(p=screen.publisher, r=screen.room))
+        print("Now publisher {p} in the room {r} is recording...\nFFmpeg subprocess pid: {pid}".format(
+            p=screen.publisher, r=screen.room, pid=proc_s.pid))
         screen.status = RecordSessionStatus.Recording
         cam.status = RecordSessionStatus.Recording
 
@@ -321,7 +324,6 @@ class HTTPClient:
             file.files.append(segment)
 
     def __record_cam(self, session: RecordSession):
-        print("Room{r}, recording cam{c}".format(r=session.room, c=session.publisher))
         folder = session.folder
         begin_time = int(time.time())
         name = str(session.publisher) + "_" + str(begin_time) + ".ts"
@@ -333,7 +335,7 @@ class HTTPClient:
              'copy', file_path])
         session.recorder_pid = proc.pid
 
-        print("Now publisher {p} in the room {r} is recording".format(p=session.publisher, r=session.room))
+        print("Now publisher {p} in the room {r} is recording...\nFFmpeg subprocess pid: {pid}".format(p=session.publisher, r=session.room, pid=proc.pid))
         session.status = RecordSessionStatus.Recording
 
         # 保存文件信息
@@ -449,7 +451,6 @@ class HTTPClient:
             segment.end_time = end_time
             if segment.publisher == session.publisher:
                 # merge if needed
-                print("Starting merging...")
                 segment.merge()
 
     # 暂停录制

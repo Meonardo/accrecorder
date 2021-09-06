@@ -44,6 +44,9 @@ async def configure(request):
 
     if 'upload_server' not in form:
         return json_response(False, -2, "Please input upload server address!")
+    upload_server = str(form['upload_server'])
+    if not upload_server.startswith("http://") or not upload_server.startswith("https://"):
+        return json_response(False, -2, "Upload server address is invalidate!")
 
     if 'class_id' not in form:
         return json_response(False, -4, "Please input class_id!")
@@ -56,7 +59,6 @@ async def configure(request):
                              "Please input correct Janus HTTP transport address, for example: http://192.168.5.12:8088")
 
     class_id = form['class_id']
-    upload_server = form['upload_server']
     success = await client.configure(room, class_id, str(room), upload_server, RTP_FORWARD_HOST, janus)
     if success:
         return json_response(True, 0, "Room {} is configured".format(room))
