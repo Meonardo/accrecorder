@@ -45,7 +45,7 @@ async def configure(request):
     if 'upload_server' not in form:
         return json_response(False, -2, "Please input upload server address!")
     upload_server = str(form['upload_server'])
-    if not upload_server.startswith("http://") or not upload_server.startswith("https://"):
+    if not upload_server.startswith("http://"):
         return json_response(False, -2, "Upload server address is invalidate!")
 
     if 'class_id' not in form:
