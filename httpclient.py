@@ -300,6 +300,7 @@ class HTTPClient:
         cam.recorder_pid = proc_c.pid
         print("Now publisher {p} in the room {r} is recording...\nFFmpeg subprocess pid: {pid}".format(
             p=cam.publisher, r=cam.room, pid=proc_c.pid))
+        print("Room{r}, CAM{c} File create at:".format(r=cam.room, c=cam.publisher), c_file_path)
         # '-use_wallclock_as_timestamps', '1'
         proc_s = subprocess.Popen(
             ['ffmpeg', '-hide_banner', '-loglevel', 'error',
@@ -310,6 +311,7 @@ class HTTPClient:
 
         print("Now publisher {p} in the room {r} is recording...\nFFmpeg subprocess pid: {pid}".format(
             p=screen.publisher, r=screen.room, pid=proc_s.pid))
+        print("Room{r}, Screen{c} File create at:".format(r=screen.room, c=screen.publisher), s_file_path)
         screen.status = RecordSessionStatus.Recording
         cam.status = RecordSessionStatus.Recording
 
@@ -335,6 +337,7 @@ class HTTPClient:
              'copy', file_path])
         session.recorder_pid = proc.pid
 
+        print("Room{r}, CAM{c} File create at:".format(r=session.room, c=session.publisher), file_path)
         print("Now publisher {p} in the room {r} is recording...\nFFmpeg subprocess pid: {pid}".format(p=session.publisher, r=session.room, pid=proc.pid))
         session.status = RecordSessionStatus.Recording
 
@@ -460,10 +463,14 @@ class HTTPClient:
     # 停止录制
     async def stop_recording(self, room, pause=False):
         if room not in self.__sessions:
-            print("Room{} not configure yet".format(room))
+            print("Room{} not configure yet!".format(room))
+            return False
+        janus: JanusSession = self.__sessions[room]
+        if janus.status.value < JanusSessionStatus.Recording.value:
+            print("Room{}, not recording yet, please try again.".format(room))
             return False
         if room not in self.__files:
-            print("Room{}, file not found".format(room))
+            print("Room{}, file not found!".format(room))
             return False
         sessions = self.__active_sessions(room)
         for s in sessions:
@@ -481,7 +488,7 @@ class HTTPClient:
         return True
 
     async def __processing_file(self, room, pause=False):
-        print("Starting processing all the files from room = ", room)
+        print("Starting processing all the files from room =", room)
 
         if room in self.__files:
             file: RecordFile = self.__files[room]
