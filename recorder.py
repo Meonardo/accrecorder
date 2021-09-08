@@ -1,3 +1,4 @@
+import asyncio
 import os
 import subprocess
 import platform
@@ -5,11 +6,12 @@ import aiohttp
 import random
 import string
 import time
-from threading import Thread
+import weakref
 
+from threading import Thread
 from enum import Enum
 from janus import SCREEN
-from janus import JanusSession
+from janus import JanusSession, JanusSessionStatus
 from aiohttp import FormData
 
 TIME_THRESHOLD = 3
@@ -117,17 +119,47 @@ class RecordFile:
         self._output_path = None
         self._thumbnail_path = None
         self.paused_file = []
+        self.parent = None
 
-    def process(self):
+    def add_process_callback(self, target):
+        self.parent = weakref.ref(target)
+
+    def process(self, janus: JanusSession, session: aiohttp.ClientSession):
         self.files = list(filter(None, self.files))
 
-        self._join_files()
+        file_names = list(map(lambda s: "file " + self.folder + "/" + s.name, self.files))
+        for file in file_names:
+            if os.path.isfile(file):
+                print("Room{r}, file({f}) not exits: ".format(r=self.room, f=file))
+                return False
+
+        print(u"Room{r}, processing file(s):\n"
+              u"{f}".format(r=self.room, f=file_names))
+        self._processing(file_names, janus, session)
+        return True
+
+    @async_func
+    def _processing(self, file_names, janus: JanusSession, session: aiohttp.ClientSession):
+        # 拼接
+        self._join_files(file_names)
+        # 转码
         self._transcode()
         print("\n\n***********\nDone! file at path: ", self._output_path, "\n***********\n\n")
         print("***********\nDone! thumbnail at path: ", self._thumbnail_path, "\n***********\n\n")
+        # 上传
+        session.status = JanusSessionStatus.Uploading
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(self.upload(janus, session))
+        print(u"Room{r}, Uploading files finished".format(r=self.room))
+        # 清理所有的文件
+        if self.parent is not None:
+            self.parent.file_processing_callback(self.room)
+            self.parent = None
+        self.clear_all_files()
+        session.status = JanusSessionStatus.Finished
 
     # 将所有的文件拼接
-    def _join_files(self):
+    def _join_files(self, file_names):
         print("Starting join all the camera files")
 
         while True:
@@ -143,9 +175,7 @@ class RecordFile:
                 time.sleep(1)
                 continue
 
-        file_names = list(map(lambda s: "file " + self.folder + "/" + s.name, self.files))
         contents = str.join("\r\n", file_names)
-
         cmd_file_path = self.folder + "/join.txt"
 
         # 删除原来有的
@@ -177,12 +207,14 @@ class RecordFile:
         # CLI ffmpeg -i input.mp4 -ss 00:00:01.000 -vframes 1 output.png
         self._thumbnail_path = self.folder + "/thumbnail_{}.png".format(time_str)
         p = subprocess.Popen(
-            ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-i', self._output_path, '-ss', '00:00:05.000', '-vframes', '1', self._thumbnail_path])
+            ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-i', self._output_path, '-ss', '00:00:01.000', '-vframes', '1', self._thumbnail_path])
         p.wait()
 
     # 上传操作
     async def upload(self, janus: JanusSession, session: aiohttp.ClientSession):
         if janus.class_id is None or janus.cloud_class_id is None or janus.upload_server is None:
+            return None
+        if not os.path.isfile(self._output_path) or not os.path.isfile(self._thumbnail_path):
             return None
         path = janus.upload_server + "?classId={c}&cloudClassId={cc}".format(c=janus.class_id, cc=janus.cloud_class_id)
         data = FormData()
@@ -194,6 +226,7 @@ class RecordFile:
                        open(self._thumbnail_path, 'rb'),
                        filename='thumbnail.png',
                        content_type='multipart/form-data')
+        print(u"Room{r}, Uploading files begin...".format(r=self.room))
         async with session.post(path, data=data) as response:
             return await response.json()
 

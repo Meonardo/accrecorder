@@ -6,8 +6,8 @@ import signal
 import os
 import aiohttp
 import datetime
-from aiohttp import ClientSession
 
+from aiohttp import ClientSession
 from janus import JanusSession, JanusSessionStatus, RecordSession, RecordSessionStatus
 from recorder import RecordFile, RecordSegment, PausedFile
 
@@ -479,15 +479,9 @@ class HTTPClient:
 
         if len(sessions) == 0:
             return False
-        await self.__processing_file(room, pause)
+        return self.__processing_file(room, pause)
 
-        # 清理资源
-        self.__sessions.pop(room, None)
-        self.__files.pop(room, None)
-
-        return True
-
-    async def __processing_file(self, room, pause=False):
+    def __processing_file(self, room, pause=False):
         print("Starting processing all the files from room =", room)
 
         if room in self.__files:
@@ -495,10 +489,6 @@ class HTTPClient:
             session: JanusSession = self.__sessions[room]
             if file is not None:
                 print("\n\n\n----------PROCESSING--------\n\n\n")
-                session.status = JanusSessionStatus.Processing
-                file.process()
-                # 清理所有的文件
-                file.clear_all_files()
                 if pause:
                     if room not in self.__pause_files:
                         paused_file = PausedFile(room, file)
@@ -509,10 +499,14 @@ class HTTPClient:
                 else:
                     if room in self.__pause_files:
                         self.__pause_files.pop(room, None)
-                session.status = JanusSessionStatus.Uploading
-                resp = await file.upload(session, self.http_session)
-                if resp is not None:
-                    print(resp)
-                    session.status = JanusSessionStatus.Finished
+                session.status = JanusSessionStatus.Processing
+                file.add_process_callback(self)
+                success = file.process(janus=session, session=self.http_session)
+                return success
+
+    def file_processing_callback(self, room):
+        # 清理资源
+        self.__sessions.pop(room, None)
+        self.__files.pop(room, None)
 
     # endregion

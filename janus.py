@@ -136,7 +136,7 @@ class RecordSession:
 
         print("\nroom folder created at: ", self.folder, "\n")
 
-    # 创建 sdp file 给 rtp forwarding -> FFMpeg    
+    # 创建 sdp file 给 rtp forwarding -> FFmpeg
     def create_sdp(self, forwarder):
         assert self.folder
 
