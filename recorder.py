@@ -60,6 +60,10 @@ class RecordSegment:
         self.is_screen = int(publisher) == SCREEN
         self.merge_finished = False
 
+    def __str__(self):
+        return "RecordSegment: filename: {fn}, publisher: {p}, room: {r}\n"\
+            .format(fn=self.name, p=self.publisher, r=self.room)
+
     @async_func
     def merge(self):
         if not self.is_screen or self.cam_name is None:
@@ -124,7 +128,7 @@ class RecordFile:
     def add_process_callback(self, target):
         self.parent = weakref.ref(target)()
 
-    def process(self, janus: JanusSession, session: aiohttp.ClientSession):
+    def process(self, janus: JanusSession):
         self.files = list(filter(None, self.files))
 
         for file in self.files:
@@ -133,13 +137,13 @@ class RecordFile:
                 print("Room{r}, file({f}) not exits: ".format(r=self.room, f=file_path))
                 return False
 
-        print(u"Room{r}, processing file(s):\n"
-              u"{f}".format(r=self.room, f=self.files))
-        self._processing(janus, session)
+        print(u"Room{r}, processing file(s):\n".format(r=self.room))
+        print(self.files)
+        self._processing(janus)
         return True
 
     @async_func
-    def _processing(self, janus: JanusSession, session: aiohttp.ClientSession):
+    def _processing(self, janus: JanusSession):
         # 拼接
         self._join_files()
         # 转码
@@ -147,9 +151,12 @@ class RecordFile:
         print("\n\n***********\nDone! file at path: ", self._output_path, "\n***********\n\n")
         print("***********\nDone! thumbnail at path: ", self._thumbnail_path, "\n***********\n\n")
         # 上传
-        session.status = JanusSessionStatus.Uploading
+        janus.status = JanusSessionStatus.Uploading
         loop = asyncio.new_event_loop()
-        loop.run_until_complete(self.upload(janus, session))
+        asyncio.set_event_loop(loop)
+        r: aiohttp.ClientSession = loop.run_until_complete(self.upload(janus))
+        if r is not None:
+            loop.run_until_complete(r.close())
         loop.close()
         print(u"Room{r}, Uploading files finished".format(r=self.room))
         # 清理所有的文件
@@ -157,7 +164,7 @@ class RecordFile:
             self.parent.file_processing_callback(self.room)
             self.parent = None
         self.clear_all_files()
-        session.status = JanusSessionStatus.Finished
+        janus.status = JanusSessionStatus.Finished
 
     # 将所有的文件拼接
     def _join_files(self):
@@ -200,7 +207,6 @@ class RecordFile:
     # 转码操作
     def _transcode(self):
         audio_codec = 'aac'
-        self._join_file_path = self.folder + "/joined.ts"
         time_str = time.strftime("%Y-%m-%d_%Hh%Mm%Ss", time.localtime())
         self._output_path = self.folder + "/" + "output_{}.mp4".format(time_str)
         # CLI ffmpeg -i input_file.fmt -c:v copy -c:a aac output.mp4
@@ -214,12 +220,14 @@ class RecordFile:
         p.wait()
 
     # 上传操作
-    async def upload(self, janus: JanusSession, session: aiohttp.ClientSession):
+    async def upload(self, janus: JanusSession):
+        session = aiohttp.ClientSession()
         if janus.class_id is None or janus.cloud_class_id is None or janus.upload_server is None:
             return None
         if not os.path.isfile(self._output_path) or not os.path.isfile(self._thumbnail_path):
             return None
         path = janus.upload_server + "?classId={c}&cloudClassId={cc}".format(c=janus.class_id, cc=janus.cloud_class_id)
+        print("Upload URL:", path)
         data = FormData()
         data.add_field('videoFile',
                        open(self._output_path, 'rb'),
@@ -232,10 +240,11 @@ class RecordFile:
         print(u"Room{r}, Uploading files begin...".format(r=self.room))
         try:
             async with session.post(path, data=data) as response:
-                return await response.json()
+                r = await response.json()
+                print(u"Room{r}, Uploading files response: {o}".format(r=self.room, o=r))
         except Exception as e:
             print("Room{r}, received upload exception: {e}".format(r=janus.room, e=e))
-            return None
+        return session
 
     # 获取上传文件的信息，如：时长和文件大小
     def fetch_filesize(self):

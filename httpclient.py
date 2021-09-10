@@ -299,9 +299,10 @@ class HTTPClient:
         cam_sdp = folder + cam.forwarder.name
 
         proc_c = subprocess.Popen(
-            ['ffmpeg', '-hide_banner', '-loglevel', 'error',
+            ['ffmpeg', '-hide_banner', '-loglevel', 'info',
              '-protocol_whitelist', 'file,udp,rtp',
-             '-i', cam_sdp, '-c:a', 'mp3', '-c:v', 'copy', c_file_path,
+             '-use_wallclock_as_timestamps', '1',
+             '-i', cam_sdp, '-c', 'copy', c_file_path,
              ])
         cam.recorder_pid = proc_c.pid
         print("Now publisher {p} in the room {r} is recording...\nFFmpeg subprocess pid: {pid}".format(
@@ -339,8 +340,10 @@ class HTTPClient:
         sdp = folder + session.forwarder.name
 
         proc = subprocess.Popen(
-            ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-protocol_whitelist', 'file,udp,rtp', '-use_wallclock_as_timestamps', '1', '-i', sdp, '-c',
-             'copy', file_path])
+            ['ffmpeg', '-hide_banner', '-loglevel', 'info',
+             '-protocol_whitelist', 'file,udp,rtp',
+             '-use_wallclock_as_timestamps', '1',
+             '-i', sdp, '-c', 'copy', file_path])
         session.recorder_pid = proc.pid
 
         print("Room{r}, CAM{c} File create at:".format(r=session.room, c=session.publisher), file_path)
@@ -456,6 +459,8 @@ class HTTPClient:
         file: RecordFile = self.__files[room]
         end_time = int(time.time())
         if file is not None:
+            # wait for subprocess to terminate
+            time.sleep(1)
             segment: RecordSegment = file.files[-1]
             segment.end_time = end_time
             if segment.publisher == session.publisher:
@@ -507,7 +512,7 @@ class HTTPClient:
                         self.__pause_files.pop(room, None)
                 session.status = JanusSessionStatus.Processing
                 file.add_process_callback(self)
-                success = file.process(janus=session, session=self.http_session)
+                success = file.process(janus=session)
                 return success
 
     def file_processing_callback(self, room):
