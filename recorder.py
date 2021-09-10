@@ -127,21 +127,21 @@ class RecordFile:
     def process(self, janus: JanusSession, session: aiohttp.ClientSession):
         self.files = list(filter(None, self.files))
 
-        file_names = list(map(lambda s: "file " + self.folder + "/" + s.name, self.files))
-        for file in file_names:
-            if not os.path.isfile(file):
-                print("Room{r}, file({f}) not exits: ".format(r=self.room, f=file))
+        for file in self.files:
+            file_path = self.folder + "/" + file.name
+            if not os.path.isfile(file_path):
+                print("Room{r}, file({f}) not exits: ".format(r=self.room, f=file_path))
                 return False
 
         print(u"Room{r}, processing file(s):\n"
-              u"{f}".format(r=self.room, f=file_names))
-        self._processing(file_names, janus, session)
+              u"{f}".format(r=self.room, f=self.files))
+        self._processing(janus, session)
         return True
 
     @async_func
-    def _processing(self, file_names, janus: JanusSession, session: aiohttp.ClientSession):
+    def _processing(self, janus: JanusSession, session: aiohttp.ClientSession):
         # 拼接
-        self._join_files(file_names)
+        self._join_files()
         # 转码
         self._transcode()
         print("\n\n***********\nDone! file at path: ", self._output_path, "\n***********\n\n")
@@ -160,7 +160,7 @@ class RecordFile:
         session.status = JanusSessionStatus.Finished
 
     # 将所有的文件拼接
-    def _join_files(self, file_names):
+    def _join_files(self):
         print("Starting join all the camera files")
 
         while True:
@@ -176,6 +176,7 @@ class RecordFile:
                 time.sleep(1)
                 continue
 
+        file_names = list(map(lambda s: "file " + self.folder + "/" + s.name, self.files))
         contents = str.join("\r\n", file_names)
         cmd_file_path = self.folder + "/join.txt"
 

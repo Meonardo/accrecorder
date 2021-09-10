@@ -303,9 +303,9 @@ class HTTPClient:
         print("Room{r}, CAM{c} File create at:".format(r=cam.room, c=cam.publisher), c_file_path)
         # '-use_wallclock_as_timestamps', '1'
         proc_s = subprocess.Popen(
-            ['ffmpeg', '-hide_banner', '-loglevel', 'error',
+            ['ffmpeg', '-hide_banner', '-loglevel', 'info',
              '-protocol_whitelist', 'file,udp,rtp',
-             '-i', screen_sdp, '-c:a', 'mp3', '-c:v', 'copy', s_file_path,
+             '-i', screen_sdp, '-c:v', 'copy', s_file_path,
              ])
         screen.recorder_pid = proc_s.pid
 
