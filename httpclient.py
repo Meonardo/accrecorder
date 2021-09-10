@@ -102,6 +102,7 @@ class HTTPClient:
                 session.create_sdp(forwarder)
                 # 发送请求
                 obj = await self.__forwarding_rtp(session_id, handle_id, session)
+                print("Room{r}, forwarding result: {e}".format(r=room, e=obj))
                 if obj is not None and 'janus' in obj:
                     janus = obj['janus']
                     if janus == 'success':
@@ -252,6 +253,11 @@ class HTTPClient:
             else:
                 print("Room{}, RTP forwarding failed.".format(room))
                 return False
+
+        janus: JanusSession = self.__sessions[room]
+        if janus is not None:
+            if '9' in publishers:
+                janus.recording_screen = True
 
         available = []
         for p in publishers:

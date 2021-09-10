@@ -229,8 +229,12 @@ class RecordFile:
                        filename='thumbnail.png',
                        content_type='multipart/form-data')
         print(u"Room{r}, Uploading files begin...".format(r=self.room))
-        async with session.post(path, data=data) as response:
-            return await response.json()
+        try:
+            async with session.post(path, data=data) as response:
+                return await response.json()
+        except Exception as e:
+            print("Room{r}, received upload exception: {e}".format(r=janus.room, e=e))
+            return None
 
     # 获取上传文件的信息，如：时长和文件大小
     def fetch_filesize(self):
