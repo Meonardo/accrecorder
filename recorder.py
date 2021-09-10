@@ -122,7 +122,7 @@ class RecordFile:
         self.parent = None
 
     def add_process_callback(self, target):
-        self.parent = weakref.ref(target)
+        self.parent = weakref.ref(target)()
 
     def process(self, janus: JanusSession, session: aiohttp.ClientSession):
         self.files = list(filter(None, self.files))
@@ -189,7 +189,8 @@ class RecordFile:
         f.write(contents)
         f.close()
 
-        self._join_file_path = self.folder + "/joined.ts"
+        time_str = time.strftime("%Y-%m-%d_%Hh%Mm%Ss", time.localtime())
+        self._join_file_path = self.folder + "/joined_{}.ts".format(time_str)
         p = subprocess.Popen(
             ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', cmd_file_path, '-c', 'copy', self._join_file_path])
         p.wait()
