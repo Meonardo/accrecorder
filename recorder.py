@@ -84,7 +84,7 @@ class RecordSegment:
                                   '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda',
                                   '-i', cam_file,
                                   '-filter_complex',
-                                  '[1]scale_npp=640:320:format=nv12[overlay];[0][overlay]overlay_cuda=x=1260:y=740',
+                                  '[1]scale_npp=480:270:format=nv12[overlay];[0][overlay]overlay_cuda=x=1440:y=810',
                                   '-codec:v', 'h264_nvenc', '-crf', '17', '-preset', 'p6', '-b:v', '8M',
                                   '-codec:a', 'copy',
                                   output_path])
