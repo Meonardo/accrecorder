@@ -129,7 +129,7 @@ class RecordFile:
 
         file_names = list(map(lambda s: "file " + self.folder + "/" + s.name, self.files))
         for file in file_names:
-            if os.path.isfile(file):
+            if not os.path.isfile(file):
                 print("Room{r}, file({f}) not exits: ".format(r=self.room, f=file))
                 return False
 
@@ -148,8 +148,9 @@ class RecordFile:
         print("***********\nDone! thumbnail at path: ", self._thumbnail_path, "\n***********\n\n")
         # 上传
         session.status = JanusSessionStatus.Uploading
-        loop = asyncio.get_event_loop()
+        loop = asyncio.new_event_loop()
         loop.run_until_complete(self.upload(janus, session))
+        loop.close()
         print(u"Room{r}, Uploading files finished".format(r=self.room))
         # 清理所有的文件
         if self.parent is not None:
