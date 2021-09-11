@@ -7,6 +7,7 @@ import random
 import string
 import time
 import weakref
+import copy
 
 from threading import Thread
 from enum import Enum
@@ -128,24 +129,24 @@ class RecordFile:
     def add_process_callback(self, target):
         self.parent = weakref.ref(target)()
 
-    def process(self, janus: JanusSession):
+    def process(self, janus: JanusSession, pause):
         self.files = list(filter(None, self.files))
+        targets = self.files
 
-        for file in self.files:
+        for file in targets:
             file_path = self.folder + "/" + file.name
             if not os.path.isfile(file_path):
                 print("Room{r}, file({f}) not exits: ".format(r=self.room, f=file_path))
                 return False
 
-        print(u"Room{r}, processing file(s):\n".format(r=self.room))
-        print(self.files)
-        self._processing(janus)
+        self._processing(janus, pause, targets)
         return True
 
     @async_func
-    def _processing(self, janus: JanusSession):
+    def _processing(self, janus: JanusSession, pause, targets):
+        clear_targets = copy.deepcopy(targets)
         # 拼接
-        self._join_files()
+        self._join_files(targets)
         # 转码
         self._transcode()
         print("\n\n***********\nDone! file at path: ", self._output_path, "\n***********\n\n")
@@ -161,18 +162,22 @@ class RecordFile:
         print(u"Room{r}, Uploading files finished".format(r=self.room))
         # 清理所有的文件
         if self.parent is not None:
-            self.parent.file_processing_callback(self.room)
+            if not pause:
+                self.parent.file_processing_callback(self.room)
             self.parent = None
-        self.clear_all_files()
-        janus.status = JanusSessionStatus.Finished
+        self.clear_all_files(pause, clear_targets)
+        if pause:
+            janus.status = JanusSessionStatus.Paused
+        else:
+            janus.status = JanusSessionStatus.Finished
 
     # 将所有的文件拼接
-    def _join_files(self):
+    def _join_files(self, targets):
         print("Starting join all the camera files")
 
         while True:
             try:
-                merging = next((True for file in self.files if file.is_screen and not file.merge_finished), False)
+                merging = next((True for file in targets if file.is_screen and not file.merge_finished), False)
                 if merging:
                     time.sleep(1)
                     print("---------- Wait for all merge tasks -----------")
@@ -183,9 +188,10 @@ class RecordFile:
                 time.sleep(1)
                 continue
 
-        file_names = list(map(lambda s: "file " + self.folder + "/" + s.name, self.files))
+        time_str = time.strftime("%Y-%m-%d_%Hh%Mm%Ss", time.localtime())
+        file_names = list(map(lambda s: "file " + self.folder + "/" + s.name, targets))
         contents = str.join("\r\n", file_names)
-        cmd_file_path = self.folder + "/join.txt"
+        cmd_file_path = self.folder + "/join_{}.txt".format(time_str)
 
         # 删除原来有的
         if os.path.isfile(cmd_file_path):
@@ -196,7 +202,6 @@ class RecordFile:
         f.write(contents)
         f.close()
 
-        time_str = time.strftime("%Y-%m-%d_%Hh%Mm%Ss", time.localtime())
         self._join_file_path = self.folder + "/joined_{}.ts".format(time_str)
         p = subprocess.Popen(
             ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', cmd_file_path, '-c', 'copy', self._join_file_path])
@@ -263,8 +268,25 @@ class RecordFile:
         return duration, file_size
 
     # 清除所有辅助文件， 仅保留截图和输出视频
-    def clear_all_files(self):
-        command = "cd {}; rm 1_*; rm 2_*; rm 9_*; rm join*".format(self.folder)
+    def clear_all_files(self, pause, targets):
+        if not pause:
+            command = "cd {}; rm 1_*; rm 2_*; rm 9_*; rm join*".format(self.folder)
+        else:
+            file_names = list(map(lambda s: "rm " + s.name, targets))
+            contents = str.join("; ", file_names)
+            command = "cd {}; ".format(self.folder) + contents + "; rm {file}".format(file=self._join_file_path)
+
+            for t in targets:
+                count = len(self.files)
+                index = 0
+                while index < count:
+                    file = self.files[index]
+                    if t.name == file.name:
+                        del self.files[index]
+                        break
+                    index += 1
+
+        print("Room{r}, clean file cmd: {cmd}".format(r=self.room, cmd=command))
         ret = subprocess.run(command, shell=True)
         print(ret)
 

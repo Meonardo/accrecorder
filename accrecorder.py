@@ -228,7 +228,7 @@ if __name__ == "__main__":
         "--host", default="0.0.0.0", help="Host for HTTP server (default: 0.0.0.0)"
     )
     parser.add_argument(
-        "--f", default="192.168.5.48", help="Janus RTP forwarding host"
+        "--f", default="192.168.5.36", help="Janus RTP forwarding host"
     )
     parser.add_argument(
         "--port", type=int, default=9002, help="Port for HTTP server (default: 9002)"

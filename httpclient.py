@@ -145,7 +145,24 @@ class HTTPClient:
             payload = self.__janus_message(forward_message, janus.janus_session_id, janus.janus_handle_id)
             path = JANUS_HOST + "/" + str(janus.janus_session_id)
             async with self.http_session.post(path, json=payload) as response:
-                return await response.json()
+                try:
+                    re = await response.json()
+                    if 'error' in re:
+                        print("Stop forwarding error: ", re)
+                        code = int(re['error']['code'])
+                        if code == 458:
+                            # session is not found, re login janus
+                            print("restart login to room", janus.room)
+                            session_id = await self.__login_janus()
+                            if session_id is not None:
+                                handle_id = await self.__fetch_janus_handle(session_id)
+                                janus.janus_session_id = session_id
+                                janus.janus_handle_id = handle_id
+                                await _stop_stream(janus, stream)
+                    else:
+                        print("Stop forwarding result: ", re)
+                except Exception as e:
+                    print("Stop forwarding exception: ", e)
 
         janus: JanusSession = self.__sessions[session.room]
         if session.forwarder.audio_stream_id is not None:
@@ -469,7 +486,7 @@ class HTTPClient:
 
     # 暂停录制
     async def pause_recording(self, room):
-        await self.stop_recording(room, True)
+        return await self.stop_recording(room, True)
 
     # 停止录制
     async def stop_recording(self, room, pause=False):
@@ -485,8 +502,10 @@ class HTTPClient:
             return False
         sessions = self.__active_sessions(room)
         for s in sessions:
-            await self.__stop_forwarding(s)
-            self.__stop_recording_session(s)
+            if not pause:
+                await self.__stop_forwarding(s)
+            remove = not pause
+            self.__stop_recording_session(s, remove)
 
         if len(sessions) == 0:
             return False
@@ -512,7 +531,7 @@ class HTTPClient:
                         self.__pause_files.pop(room, None)
                 session.status = JanusSessionStatus.Processing
                 file.add_process_callback(self)
-                success = file.process(janus=session)
+                success = file.process(janus=session, pause=pause)
                 return success
 
     def file_processing_callback(self, room):

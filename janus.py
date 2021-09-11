@@ -13,7 +13,8 @@ class JanusSessionStatus(Enum):
     Stopped = 5
     Processing = 6
     Uploading = 6
-    Finished = 7
+    Paused = 7
+    Finished = 8
 
     Failed = -1
 
