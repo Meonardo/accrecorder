@@ -72,7 +72,7 @@ class HTTPClient:
             return False
         self.__sessions.pop(room, None)
 
-        keys = list(map(lambda x: str(room) + "-" + str(x), [CAM1, CAM2]))
+        keys = list(map(lambda x: str(room) + "-" + str(x), [CAM1, CAM2, SCREEN]))
         for k in keys:
             if k in self.__record_sessions:
                 self.__record_sessions.pop(k, None)
