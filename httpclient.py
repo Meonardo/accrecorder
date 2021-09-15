@@ -251,7 +251,9 @@ class HTTPClient:
         sessions = list(map(l, p))
         sessions = filter(None, sessions)
         sessions = list(filter(lambda x: x.status == RecordSessionStatus.Recording, sessions))
-        return sessions[0]
+        if len(sessions) > 0:
+            return sessions[0]
+        return None
 
     # 开始录制视频
     async def start_recording(self, room, publishers, forwarder):
@@ -424,6 +426,8 @@ class HTTPClient:
             return False
 
         cam = self.__recording_cam(room)
+        if cam is None:
+            return False
         self.__stop_recording_session(cam, False)
         self.__record_screen_cam(screen, cam)
 
@@ -447,6 +451,8 @@ class HTTPClient:
         # 结束录屏但继续录制摄像头
         self.__stop_recording_session(screen, False)
         cam = self.__recording_cam(room)
+        if cam is None:
+            return False
         self.__stop_recording_session(cam, False)
         time.sleep(0.02)
         self.__record_cam(cam)
