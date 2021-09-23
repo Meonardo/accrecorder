@@ -11,8 +11,7 @@ import copy
 
 from threading import Thread
 from enum import Enum
-from janus import SCREEN
-from janus import JanusSession, JanusSessionStatus
+from janus import RecorderStatus, RecordManager
 from aiohttp import FormData
 
 TIME_THRESHOLD = 3
@@ -51,14 +50,15 @@ class MergeFile:
 
 
 class RecordSegment:
-    def __init__(self, name, room, publisher, begin_time, end_time=None, cam_name=None):
+    def __init__(self, name, room, publisher, folder, begin_time, end_time=None, cam_name=None):
         self.name = name
         self.room = room
         self.publisher = publisher
         self.begin_time = begin_time
         self.end_time = end_time
         self.cam_name = cam_name
-        self.is_screen = int(publisher) == SCREEN
+        self.folder = folder
+        self.is_screen = str(publisher) == 'screen'
         self.merge_finished = False
 
     def __str__(self):
@@ -69,35 +69,17 @@ class RecordSegment:
     def merge(self):
         if not self.is_screen or self.cam_name is None:
             return
-        if platform.system() == "Darwin":
-            is_linux = False
-            file_dir = "/Users/amdox/File/Combine/.recordings/" + str(self.room)
-        else:
-            file_dir = "/home/hd/recorder/videos/recordings/" + str(self.room)
-            is_linux = True
-        screen_file = file_dir + "/" + self.name
-        cam_file = file_dir + "/" + self.cam_name
-        output_path = file_dir + "/" + filename() + ".ts"
-        if is_linux:
-            p = subprocess.Popen(['ffmpeg', '-hide_banner', '-loglevel', 'error',
-                                  '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda',
-                                  '-i', screen_file,
-                                  '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda',
-                                  '-i', cam_file,
-                                  '-filter_complex',
-                                  '[1]scale_npp=480:270:format=nv12[overlay];[0][overlay]overlay_cuda=x=1440:y=810',
-                                  '-codec:v', 'h264_nvenc', '-crf', '17', '-preset', 'p6', '-b:v', '8M',
-                                  '-codec:a', 'copy',
-                                  output_path])
-        else:
-            p = subprocess.Popen(['ffmpeg', '-hide_banner', '-loglevel', 'error',
-                                  '-i', screen_file,
-                                  '-i', cam_file,
-                                  '-filter_complex',
-                                  '[1]scale=iw/3:ih/3[pip];[0][pip] overlay=main_w-overlay_w-20:main_h-overlay_h-20',
-                                  '-codec:v', 'h264_videotoolbox', '-preset', 'fast', '-b:v', '8M',
-                                  '-codec:a', 'copy',
-                                  output_path])
+        screen_file = self.folder + "\\" + self.name
+        cam_file = self.folder + "\\" + self.cam_name
+        output_path = self.folder + "\\" + filename() + ".ts"
+        p = subprocess.Popen(['ffmpeg', '-hide_banner', '-loglevel', 'error',
+                              '-i', screen_file,
+                              '-i', cam_file,
+                              '-filter_complex',
+                              '[1]scale=iw/3:ih/3[pip];[0][pip] overlay=main_w-overlay_w-20:main_h-overlay_h-20',
+                              '-codec:v', 'h264_qsv', '-preset', 'fast', '-b:v', '6M',
+                              '-codec:a', 'copy',
+                              output_path])
 
         print("Starting merging {s} & {c}...".format(s=self.name, c=self.cam_name))
         p.wait()
@@ -109,15 +91,11 @@ class RecordSegment:
 
 
 class RecordFile:
-    def __init__(self, room, file: RecordSegment):
+    def __init__(self, room, folder, file: RecordSegment):
         self.room = room
         self.files = [file]
         self.status: RecordStatus = RecordStatus.Defalut
-        if platform.system() == "Darwin":
-            file_dir = "/Users/amdox/File/Combine/.recordings/"
-        else:
-            file_dir = "/home/hd/recorder/videos/recordings/"
-        self.folder = file_dir + str(self.room)
+        self.folder = folder
         self._join_file_path = None
         self._file_cuts = None
         self._cuts_path = None
@@ -129,21 +107,21 @@ class RecordFile:
     def add_process_callback(self, target):
         self.parent = weakref.ref(target)()
 
-    def process(self, janus: JanusSession, pause):
+    def process(self, recorder: RecordManager, pause):
         self.files = list(filter(None, self.files))
         targets = self.files
 
         for file in targets:
-            file_path = self.folder + "/" + file.name
+            file_path = self.folder + "\\" + file.name
             if not os.path.isfile(file_path):
                 print("Room{r}, file({f}) not exits: ".format(r=self.room, f=file_path))
                 return False
 
-        self._processing(janus, pause, targets)
+        self._processing(recorder, pause, targets)
         return True
 
     @async_func
-    def _processing(self, janus: JanusSession, pause, targets):
+    def _processing(self, recorder: RecordManager, pause, targets):
         clear_targets = copy.deepcopy(targets)
         # 拼接
         self._join_files(targets)
@@ -152,10 +130,10 @@ class RecordFile:
         print("\n\n***********\nDone! file at path: ", self._output_path, "\n***********\n\n")
         print("***********\nDone! thumbnail at path: ", self._thumbnail_path, "\n***********\n\n")
         # 上传
-        janus.status = JanusSessionStatus.Uploading
+        recorder.status = RecorderStatus.Uploading
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        r: aiohttp.ClientSession = loop.run_until_complete(self.upload(janus))
+        r: aiohttp.ClientSession = loop.run_until_complete(self.upload(recorder))
         if r is not None:
             loop.run_until_complete(r.close())
         loop.close()
@@ -167,9 +145,9 @@ class RecordFile:
             self.parent = None
         self.clear_all_files(pause, clear_targets)
         if pause:
-            janus.status = JanusSessionStatus.Paused
+            recorder.status = RecorderStatus.Paused
         else:
-            janus.status = JanusSessionStatus.Finished
+            recorder.status = RecorderStatus.Finished
 
     # 将所有的文件拼接
     def _join_files(self, targets):
@@ -189,9 +167,9 @@ class RecordFile:
                 continue
 
         time_str = time.strftime("%Y-%m-%d_%Hh%Mm%Ss", time.localtime())
-        file_names = list(map(lambda s: "file " + self.folder + "/" + s.name, targets))
+        file_names = list(map(lambda s: "file " + self.folder + "\\" + s.name, targets))
         contents = str.join("\r\n", file_names)
-        cmd_file_path = self.folder + "/join_{}.txt".format(time_str)
+        cmd_file_path = self.folder + "\\join_{}.txt".format(time_str)
 
         # 删除原来有的
         if os.path.isfile(cmd_file_path):
@@ -202,7 +180,7 @@ class RecordFile:
         f.write(contents)
         f.close()
 
-        self._join_file_path = self.folder + "/joined_{}.ts".format(time_str)
+        self._join_file_path = self.folder + "\\joined_{}.ts".format(time_str)
         p = subprocess.Popen(
             ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', cmd_file_path, '-c', 'copy', self._join_file_path])
         p.wait()
@@ -211,27 +189,26 @@ class RecordFile:
 
     # 转码操作
     def _transcode(self):
-        audio_codec = 'aac'
         time_str = time.strftime("%Y-%m-%d_%Hh%Mm%Ss", time.localtime())
-        self._output_path = self.folder + "/" + "output_{}.mp4".format(time_str)
+        self._output_path = self.folder + "\\output_{}.mp4".format(time_str)
         # CLI ffmpeg -i input_file.fmt -c:v copy -c:a aac output.mp4
         p = subprocess.Popen(
-            ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-i', self._join_file_path, '-c:v', 'copy', '-c:a', audio_codec, self._output_path])
+            ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-i', self._join_file_path, '-c', 'copy', '-c:a', self._output_path])
         p.wait()
         # CLI ffmpeg -i input.mp4 -ss 00:00:01.000 -vframes 1 output.png
-        self._thumbnail_path = self.folder + "/thumbnail_{}.png".format(time_str)
+        self._thumbnail_path = self.folder + "\\thumbnail_{}.png".format(time_str)
         p = subprocess.Popen(
             ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-i', self._output_path, '-ss', '00:00:01.000', '-vframes', '1', self._thumbnail_path])
         p.wait()
 
     # 上传操作
-    async def upload(self, janus: JanusSession):
+    async def upload(self, recorder: RecordManager):
         session = aiohttp.ClientSession()
-        if janus.class_id is None or janus.cloud_class_id is None or janus.upload_server is None:
+        if recorder.class_id is None or recorder.cloud_class_id is None or recorder.upload_server is None:
             return None
         if not os.path.isfile(self._output_path) or not os.path.isfile(self._thumbnail_path):
             return None
-        path = janus.upload_server + "?classId={c}&cloudClassId={cc}".format(c=janus.class_id, cc=janus.cloud_class_id)
+        path = recorder.upload_server + "?classId={c}&cloudClassId={cc}".format(c=recorder.class_id, cc=recorder.cloud_class_id)
         print("Upload URL:", path)
         data = FormData()
         data.add_field('videoFile',
@@ -248,7 +225,7 @@ class RecordFile:
                 r = await response.json()
                 print(u"Room{r}, Uploading files response: {o}".format(r=self.room, o=r))
         except Exception as e:
-            print("Room{r}, received upload exception: {e}".format(r=janus.room, e=e))
+            print("Room{r}, received upload exception: {e}".format(r=self.room, e=e))
         return session
 
     # 获取上传文件的信息，如：时长和文件大小

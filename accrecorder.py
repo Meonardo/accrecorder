@@ -1,6 +1,7 @@
 #!/usr/bin/python
 import os
 import argparse
+import subprocess
 
 from aiohttp import web
 from httpclient import HTTPClient, print
@@ -21,6 +22,20 @@ def json_response(success, code, data):
     print("Send response: ", resp)
     print("[END] \n")
     return web.json_response(resp)
+
+
+def check_mic(mic):
+    result = subprocess.run(['ffmpeg', '-f', 'dshow', '-list_devices', '1', '-i', 'dummy'],
+                            capture_output=True, text=True, encoding="utf-8")
+
+    # print(result)
+    if result.stderr is not None:
+        if mic in result.stderr:
+            return True
+    if result.stdout is not None:
+        if mic in result.stdout:
+            return True
+    return False
 
 
 # index
@@ -59,7 +74,7 @@ async def configure(request):
                              "Please input correct Janus HTTP transport address, for example: http://192.168.5.12:8088")
 
     class_id = form['class_id']
-    success = await client.configure(room, class_id, str(room), upload_server, RTP_FORWARD_HOST, janus)
+    success = await client.configure(room, class_id, str(room), upload_server)
     if success:
         return json_response(True, 0, "Room {} is configured".format(room))
     else:
@@ -99,15 +114,23 @@ async def start(request):
     if not room.isdigit():
         return json_response(False, -1, "Please input correct Room number!")
 
-    if 'publisher' not in form:
+    if 'cam' not in form:
         return json_response(False, -1, "Please input publisher ids to record!")
-    publisher = str(form["publisher"])
-    list_str = publisher.split(',')
-    for p in list_str:
-        if not p.isdigit():
-            return json_response(False, -2, "Please input correct publisher identifier!")
+    cam = str(form["cam"])
+    if not cam.startswith('rtsp'):
+        return json_response(False, -2, "Please input correct publisher identifier!")
 
-    success = await client.start_recording(room, list_str, RTP_FORWARD_HOST)
+    enable_screen = False
+    if 'screen' in form:
+        enable_screen = int(form['screen']) == 1
+
+    mic = None
+    if 'mic' in form:
+        mic = str(form['mic'])
+        if not check_mic(mic):
+            print('Invalidate microphone device!')
+
+    success = await client.start_recording(room, cam, mic, enable_screen)
     if success:
         return json_response(True, 0, "Start recording at room {}".format(room))
     else:
