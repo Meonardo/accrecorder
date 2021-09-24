@@ -224,11 +224,11 @@ async def switch_camera(request):
     if not room.isdigit():
         return json_response(False, -1, "Please input correct Room number!")
 
-    if 'publisher' not in form:
-        return json_response(False, -2, "Please input publisher id!")
-    publisher = form["publisher"]
-    if not publisher.isdigit():
-        return json_response(False, -2, "Please input correct publisher identifier!")
+    if 'cam' not in form:
+        return json_response(False, -2, "Please input publisher ids to record!")
+    cam = str(form["cam"])
+    if not cam.startswith('rtsp'):
+        return json_response(False, -3, "Please input correct publisher identifier!")
 
     mic = None
     if 'mic' in form:
@@ -236,11 +236,11 @@ async def switch_camera(request):
         if not check_mic(mic):
             return json_response(False, -4, "Invalidate microphone device!")
 
-    success = await client.switch_camera(room, publisher, mic)
+    success = await client.switch_camera(room, cam, mic)
     if success:
-        return json_response(True, 0, "Switch to CAM{}".format(publisher))
+        return json_response(True, 0, "Switch to CAM{}".format(cam))
     else:
-        return json_response(False, -3, "You already have record CAM{}".format(publisher))
+        return json_response(False, -3, "You already have record CAM{}".format(cam))
 
 
 async def on_shutdown(app):

@@ -254,7 +254,7 @@ class HTTPClient:
         return publisher in recorder.sessions
 
     # 切换摄像头
-    async def switch_camera(self, room, publisher, mic):
+    async def switch_camera(self, room, cam, mic):
         if room not in self.__sessions:
             print("Room{} not configure yet".format(room))
             return False
@@ -262,8 +262,8 @@ class HTTPClient:
         if recorder is None:
             return False
 
-        cam: RecordSession = self.__create_record_session(room, publisher, mic)
-        if cam.status == RecordSessionStatus.Recording:
+        cam_session: RecordSession = self.__create_record_session(room, cam, mic)
+        if cam_session.status == RecordSessionStatus.Recording:
             print("Room{} is recording, we dont have to record again".format(room))
             return False
 
@@ -274,12 +274,12 @@ class HTTPClient:
             self.__stop_recording_session(screen, False)
             recording_cam = self.__recording_cam(room)
             self.__stop_recording_session(recording_cam, False)
-            self.__record_screen_cam(screen, cam)
+            self.__record_screen_cam(screen, cam_session)
         else:
             recording_cam = self.__recording_cam(room)
             self.__stop_recording_session(recording_cam, False)
             recording_cam.status = RecordSessionStatus.Forwarding
-            self.__record_cam(cam)
+            self.__record_cam(cam_session)
         return True
 
     # 开始录制屏幕
