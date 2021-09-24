@@ -8,13 +8,28 @@ import string
 import time
 import weakref
 import copy
+import datetime
 
 from threading import Thread
+from pathlib import Path
 from enum import Enum
-from janus import RecorderStatus, RecordManager
 from aiohttp import FormData
 
 TIME_THRESHOLD = 3
+SCREEN = 'screen'
+
+
+old_print = print
+
+
+def timestamped_print(*args, **kwargs):
+    time_str = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().isoformat(
+        sep=' ',
+        timespec='milliseconds')
+    old_print(time_str, *args, **kwargs)
+
+
+print = timestamped_print
 
 
 # Random filename
@@ -27,6 +42,68 @@ def async_func(f):
         thr = Thread(target = f, args = args, kwargs = kwargs)
         thr.start()
     return wrapper
+
+
+class RecorderStatus(Enum):
+    Default = 1
+    Starting = 2
+    # Forwarding = 3
+    Recording = 4
+    Stopped = 5
+    Processing = 6
+    Uploading = 6
+    Paused = 7
+    Finished = 8
+
+    Failed = -1
+
+
+class RecordSessionStatus(Enum):
+    Default = 1
+    Started = 2
+    # Forwarding = 3
+    Recording = 3
+    Uploading = 4
+    Stopped = 5
+    Failed = -1
+
+
+class RecordManager:
+    def __init__(self, room):
+        self.room = room
+        self.sessions = {}
+        self.recording_screen = False
+        self.class_id = None
+        self.cloud_class_id = None
+        self.upload_server = None
+        self.status: RecorderStatus = RecorderStatus.Default
+
+
+class RecordSession:
+    def __init__(self, room, publisher, started_time, mic=None):
+        self.room = room
+        self.publisher = publisher
+        self.started_time = started_time
+
+        self.status = RecordSessionStatus.Default
+        self.folder = None
+        self.recorder_pid = None
+        self.mic = mic
+
+    # 创建录像房间的文件夹, 当前房间会话的所有文件都在此文件夹中
+    def create_file_folder(self):
+        p = platform.system().lower()
+        if p == "darwin":
+            file_dir = "/Users/amdox/File/Combine/.recordings/" + str(self.room) + "/"
+        elif p == "linux":
+            file_dir = "/home/hd/recorder/videos/recordings/" + str(self.room) + "/"
+        else:
+            file_dir = os.path.expanduser(os.getenv('USERPROFILE')) + '\\recordings\\' + str(self.room) + '\\'
+
+        Path(file_dir).mkdir(parents=True, exist_ok=True)
+        self.folder = file_dir
+
+        print("\nroom folder created at: ", self.folder, "\n")
 
 
 class RecordStatus(Enum):
@@ -72,7 +149,7 @@ class RecordSegment:
         screen_file = self.folder + "\\" + self.name
         cam_file = self.folder + "\\" + self.cam_name
         output_path = self.folder + "\\" + filename() + ".ts"
-        p = subprocess.Popen(['ffmpeg', '-hide_banner', '-loglevel', 'error',
+        p = subprocess.Popen(['ffmpeg', '-hide_banner', '-loglevel', 'info',
                               '-i', screen_file,
                               '-i', cam_file,
                               '-filter_complex',
@@ -83,7 +160,7 @@ class RecordSegment:
 
         print("Starting merging {s} & {c}...".format(s=self.name, c=self.cam_name))
         p.wait()
-        ret = subprocess.run('mv {s} {t}'.format(s=output_path, t=screen_file), shell=True)
+        ret = subprocess.run('rename {s} {t}'.format(s=output_path, t=screen_file), shell=True)
         print(ret)
         self.merge_finished = True
 
@@ -193,7 +270,7 @@ class RecordFile:
         self._output_path = self.folder + "\\output_{}.mp4".format(time_str)
         # CLI ffmpeg -i input_file.fmt -c:v copy -c:a aac output.mp4
         p = subprocess.Popen(
-            ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-i', self._join_file_path, '-c', 'copy', '-c:a', self._output_path])
+            ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-i', self._join_file_path, '-c', 'copy', self._output_path])
         p.wait()
         # CLI ffmpeg -i input.mp4 -ss 00:00:01.000 -vframes 1 output.png
         self._thumbnail_path = self.folder + "\\thumbnail_{}.png".format(time_str)
@@ -247,11 +324,11 @@ class RecordFile:
     # 清除所有辅助文件， 仅保留截图和输出视频
     def clear_all_files(self, pause, targets):
         if not pause:
-            command = "cd {}; rm 1_*; rm 2_*; rm 9_*; rm join*".format(self.folder)
+            command = "pushd {} && del 1_* && del 2_* && del 9_* && del join*".format(self.folder)
         else:
-            file_names = list(map(lambda s: "rm " + s.name, targets))
-            contents = str.join("; ", file_names)
-            command = "cd {}; ".format(self.folder) + contents + "; rm {file}".format(file=self._join_file_path)
+            file_names = list(map(lambda s: "del " + s.name, targets))
+            contents = str.join(" && ", file_names)
+            command = "pushd {} && ".format(self.folder) + contents + " && del {file}".format(file=self._join_file_path)
 
             for t in targets:
                 count = len(self.files)

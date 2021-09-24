@@ -5,25 +5,11 @@ import subprocess
 import signal
 import os
 import aiohttp
-import datetime
+
 
 from aiohttp import ClientSession
-from janus import RecorderStatus, RecordSession, RecordSessionStatus, RecordManager
-from recorder import RecordFile, RecordSegment, PausedFile
-
-SCREEN = 'screen'
-
-old_print = print
-
-
-def timestamped_print(*args, **kwargs):
-    time_str = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().isoformat(
-        sep=' ',
-        timespec='milliseconds')
-    old_print(time_str, *args, **kwargs)
-
-
-print = timestamped_print
+from recorder import RecorderStatus, RecordSession, RecordSessionStatus,\
+    RecordManager, RecordFile, RecordSegment, PausedFile, SCREEN, print
 
 
 # Random Transaction ID
@@ -66,7 +52,9 @@ class HTTPClient:
             record_session = RecordSession(room=room, publisher=publisher, started_time=start_time, mic=mic)
             recorder.sessions[session_key] = record_session
             return record_session
-        return recorder.sessions[session_key]
+        session = recorder.sessions[session_key]
+        session.mic = mic
+        return session
 
     async def configure(self, room, class_id, cloud_class_id, upload_server):
         recorder = self.__create_recorder(room)
@@ -120,7 +108,7 @@ class HTTPClient:
     def __recording_cam(self, room):
         sessions = self.__active_sessions(room, status=RecordSessionStatus.Recording)
         if sessions is not None:
-            sessions = list(filter(lambda x: x.publisher == SCREEN, sessions))
+            sessions = list(filter(lambda x: x.publisher != SCREEN, sessions))
             if len(sessions) > 0:
                 return sessions[0]
         return None
@@ -266,19 +254,19 @@ class HTTPClient:
         return publisher in recorder.sessions
 
     # 切换摄像头
-    async def switch_camera(self, room, publisher):
+    async def switch_camera(self, room, publisher, mic):
         if room not in self.__sessions:
             print("Room{} not configure yet".format(room))
             return False
-        if not self.__publisher_exist(room, publisher):
-            print("Room{r}, CAM{c} is invalidate".format(r=room, c=publisher))
-            return False
-        cam: RecordSession = self.__find_record_session(room, publisher)
-        if cam.status == RecordSessionStatus.Recording:
-            print("Room{} is not recording".format(room))
+        recorder: RecordManager = self.__sessions[room]
+        if recorder is None:
             return False
 
-        recorder: RecordManager = self.__sessions[room]
+        cam: RecordSession = self.__create_record_session(room, publisher, mic)
+        if cam.status == RecordSessionStatus.Recording:
+            print("Room{} is recording, we dont have to record again".format(room))
+            return False
+
         if recorder.recording_screen:
             screen = self.__find_record_session(room, SCREEN)
             if screen is None:

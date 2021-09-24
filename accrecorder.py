@@ -1,14 +1,12 @@
 #!/usr/bin/python
-import os
 import argparse
 import subprocess
 
 from aiohttp import web
-from httpclient import HTTPClient, print
+from httpclient import HTTPClient
+from recorder import print
 
-ROOT = os.path.dirname(__file__)
 client = HTTPClient()
-RTP_FORWARD_HOST = ''
 
 
 # common response   
@@ -115,10 +113,10 @@ async def start(request):
         return json_response(False, -1, "Please input correct Room number!")
 
     if 'cam' not in form:
-        return json_response(False, -1, "Please input publisher ids to record!")
+        return json_response(False, -2, "Please input publisher ids to record!")
     cam = str(form["cam"])
     if not cam.startswith('rtsp'):
-        return json_response(False, -2, "Please input correct publisher identifier!")
+        return json_response(False, -3, "Please input correct publisher identifier!")
 
     enable_screen = False
     if 'screen' in form:
@@ -128,13 +126,13 @@ async def start(request):
     if 'mic' in form:
         mic = str(form['mic'])
         if not check_mic(mic):
-            print('Invalidate microphone device!')
+            return json_response(False, -4, "Invalidate microphone device!")
 
     success = await client.start_recording(room, cam, mic, enable_screen)
     if success:
         return json_response(True, 0, "Start recording at room {}".format(room))
     else:
-        return json_response(False, -3, "Current room {r} is recording".format(r=room))
+        return json_response(False, -9, "Current room {r} is recording".format(r=room))
 
 
 # check stop command
@@ -232,7 +230,13 @@ async def switch_camera(request):
     if not publisher.isdigit():
         return json_response(False, -2, "Please input correct publisher identifier!")
 
-    success = await client.switch_camera(room, int(publisher))
+    mic = None
+    if 'mic' in form:
+        mic = str(form['mic'])
+        if not check_mic(mic):
+            return json_response(False, -4, "Invalidate microphone device!")
+
+    success = await client.switch_camera(room, publisher, mic)
     if success:
         return json_response(True, 0, "Switch to CAM{}".format(publisher))
     else:
