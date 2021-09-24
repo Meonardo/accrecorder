@@ -9,7 +9,7 @@ from recorder import print
 client = HTTPClient()
 
 
-# common response   
+# common response
 def json_response(success, code, data):
     # 满足Windows客户端需求，进行修改
     if success:
@@ -238,9 +238,9 @@ async def switch_camera(request):
 
     success = await client.switch_camera(room, cam, mic)
     if success:
-        return json_response(True, 0, "Switch to CAM{}".format(cam))
+        return json_response(True, 0, "Switch to CAM {}".format(cam))
     else:
-        return json_response(False, -3, "You already have record CAM{}".format(cam))
+        return json_response(False, -3, "You already have record CAM {}".format(cam))
 
 
 async def on_shutdown(app):

@@ -14,6 +14,7 @@ from threading import Thread
 from pathlib import Path
 from enum import Enum
 from aiohttp import FormData
+from urllib.parse import urlparse
 
 TIME_THRESHOLD = 3
 SCREEN = 'screen'
@@ -83,6 +84,11 @@ class RecordSession:
     def __init__(self, room, publisher, started_time, mic=None):
         self.room = room
         self.publisher = publisher
+        if publisher != SCREEN:
+            o = urlparse(publisher)
+            self.name = o.netloc.replace('.', '_') + o.path.replace('/', '_')
+        else:
+            self.name = publisher
         self.started_time = started_time
 
         self.status = RecordSessionStatus.Default
@@ -146,10 +152,10 @@ class RecordSegment:
     def merge(self):
         if not self.is_screen or self.cam_name is None:
             return
-        screen_file = self.folder + "\\" + self.name
-        cam_file = self.folder + "\\" + self.cam_name
-        output_path = self.folder + "\\" + filename() + ".ts"
-        p = subprocess.Popen(['ffmpeg', '-hide_banner', '-loglevel', 'info',
+        screen_file = self.folder + self.name
+        cam_file = self.folder + self.cam_name
+        output_path = self.folder + filename() + ".ts"
+        p = subprocess.Popen(['ffmpeg', '-loglevel', 'error',
                               '-i', screen_file,
                               '-i', cam_file,
                               '-filter_complex',
@@ -160,7 +166,8 @@ class RecordSegment:
 
         print("Starting merging {s} & {c}...".format(s=self.name, c=self.cam_name))
         p.wait()
-        ret = subprocess.run('rename {s} {t}'.format(s=output_path, t=screen_file), shell=True)
+        cmd = "del {sc} && ren {s} {t}".format(sc=screen_file ,s=output_path, t=self.name)
+        ret = subprocess.run(cmd, shell=True)
         print(ret)
         self.merge_finished = True
 
@@ -189,7 +196,7 @@ class RecordFile:
         targets = self.files
 
         for file in targets:
-            file_path = self.folder + "\\" + file.name
+            file_path = self.folder + file.name
             if not os.path.isfile(file_path):
                 print("Room{r}, file({f}) not exits: ".format(r=self.room, f=file_path))
                 return False
@@ -244,9 +251,9 @@ class RecordFile:
                 continue
 
         time_str = time.strftime("%Y-%m-%d_%Hh%Mm%Ss", time.localtime())
-        file_names = list(map(lambda s: "file " + self.folder + "\\" + s.name, targets))
+        file_names = list(map(lambda s: "file " + self.folder + s.name, targets))
         contents = str.join("\r\n", file_names)
-        cmd_file_path = self.folder + "\\join_{}.txt".format(time_str)
+        cmd_file_path = self.folder + "join_{}.txt".format(time_str)
 
         # 删除原来有的
         if os.path.isfile(cmd_file_path):
@@ -257,9 +264,9 @@ class RecordFile:
         f.write(contents)
         f.close()
 
-        self._join_file_path = self.folder + "\\joined_{}.ts".format(time_str)
+        self._join_file_path = self.folder + "joined_{}.ts".format(time_str)
         p = subprocess.Popen(
-            ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', cmd_file_path, '-c', 'copy', self._join_file_path])
+            ['ffmpeg', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', cmd_file_path, '-c', 'copy', self._join_file_path])
         p.wait()
 
         self.status = RecordStatus.Processing
@@ -267,15 +274,15 @@ class RecordFile:
     # 转码操作
     def _transcode(self):
         time_str = time.strftime("%Y-%m-%d_%Hh%Mm%Ss", time.localtime())
-        self._output_path = self.folder + "\\output_{}.mp4".format(time_str)
+        self._output_path = self.folder + "output_{}.mp4".format(time_str)
         # CLI ffmpeg -i input_file.fmt -c:v copy -c:a aac output.mp4
         p = subprocess.Popen(
-            ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-i', self._join_file_path, '-c', 'copy', self._output_path])
+            ['ffmpeg', '-loglevel', 'error', '-i', self._join_file_path, '-c', 'copy', self._output_path])
         p.wait()
         # CLI ffmpeg -i input.mp4 -ss 00:00:01.000 -vframes 1 output.png
-        self._thumbnail_path = self.folder + "\\thumbnail_{}.png".format(time_str)
+        self._thumbnail_path = self.folder + "thumbnail_{}.png".format(time_str)
         p = subprocess.Popen(
-            ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-i', self._output_path, '-ss', '00:00:01.000', '-vframes', '1', self._thumbnail_path])
+            ['ffmpeg', '-loglevel', 'error', '-i', self._output_path, '-ss', '00:00:01.000', '-vframes', '1', self._thumbnail_path])
         p.wait()
 
     # 上传操作
@@ -324,7 +331,7 @@ class RecordFile:
     # 清除所有辅助文件， 仅保留截图和输出视频
     def clear_all_files(self, pause, targets):
         if not pause:
-            command = "pushd {} && del 1_* && del 2_* && del 9_* && del join*".format(self.folder)
+            command = "pushd {} && del 192_* && del screen_* && del join*".format(self.folder)
         else:
             file_names = list(map(lambda s: "del " + s.name, targets))
             contents = str.join(" && ", file_names)

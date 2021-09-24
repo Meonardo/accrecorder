@@ -50,6 +50,7 @@ class HTTPClient:
         start_time = int(time.time())
         if session_key not in recorder.sessions:
             record_session = RecordSession(room=room, publisher=publisher, started_time=start_time, mic=mic)
+            record_session.create_file_folder()
             recorder.sessions[session_key] = record_session
             return record_session
         session = recorder.sessions[session_key]
@@ -157,25 +158,24 @@ class HTTPClient:
         folder = screen.folder
         begin_time = int(time.time())
 
-        s_name = str(screen.publisher) + "_" + str(begin_time) + ".ts"
+        s_name = str(screen.name) + "_" + str(begin_time) + ".ts"
         s_file_path = folder + s_name
 
-        c_name = str(cam.publisher) + "_" + str(begin_time) + ".ts"
+        c_name = str(cam.name) + "_" + str(begin_time) + ".ts"
         c_file_path = folder + c_name
 
         if cam.mic is not None:
             mic = 'audio=' + cam.mic
             proc_c = subprocess.Popen(
-                ['ffmpeg', '-hide_banner', '-loglevel', 'info',
-                 '-use_wallclock_as_timestamps', '1', '-rtsp_transport', 'tcp',
-                 '-i', cam.publisher, '-itsoffset', '1', '-f', 'dshow', '-i', mic,
+                ['ffmpeg', '-loglevel', 'error',
+                 '-rtsp_transport', 'tcp', '-i', cam.publisher,
+                 '-f', 'dshow', '-use_wallclock_as_timestamps', '1', '-itsoffset', '1', '-i', mic,
                  '-c:v', 'copy', '-c:a', 'aac', c_file_path,
                  ])
         else:
             proc_c = subprocess.Popen(
-                ['ffmpeg', '-hide_banner', '-loglevel', 'info',
-                 '-use_wallclock_as_timestamps', '1', '-rtsp_transport', 'tcp',
-                 '-i', cam.publisher,
+                ['ffmpeg', '-loglevel', 'error',
+                 '-rtsp_transport', 'tcp', '-i', cam.publisher,
                  '-c:v', 'copy', c_file_path
                  ])
         cam.recorder_pid = proc_c.pid
@@ -185,8 +185,9 @@ class HTTPClient:
         # '-use_wallclock_as_timestamps', '1'
         video = 'video=screen-capture-recorder'
         proc_s = subprocess.Popen(
-            ['ffmpeg', '-hide_banner', '-loglevel', 'info', '-f', 'dshow',
-             '-i', video, '-c:v', 'h264_qsv',
+            ['ffmpeg', '-loglevel', 'error',
+             '-f', 'dshow',
+             '-i', video, '-c:v', 'h264_qsv', '-r', '30',
              '-b:v', '4M', '-preset', 'fast', '-tune', 'zerolatency', s_file_path
              ])
         screen.recorder_pid = proc_s.pid
@@ -210,21 +211,21 @@ class HTTPClient:
     def __record_cam(self, session: RecordSession):
         folder = session.folder
         begin_time = int(time.time())
-        name = str(session.publisher) + "_" + str(begin_time) + ".ts"
+        name = session.name + "_" + str(begin_time) + ".ts"
         file_path = folder + name
 
         if session.mic is not None:
             mic = 'audio=' + session.mic
             proc = subprocess.Popen(
-                ['ffmpeg', '-hide_banner', '-loglevel', 'info',
-                 '-use_wallclock_as_timestamps', '1', '-rtsp_transport', 'tcp',
-                 '-i', session.publisher, '-itsoffset', '1', '-f', 'dshow', '-i', mic,
+                ['ffmpeg', '-loglevel', 'error',
+                 '-rtsp_transport', 'tcp', '-i', session.publisher,
+                 '-f', 'dshow', '-use_wallclock_as_timestamps', '1', '-itsoffset', '1', '-i', mic,
                  '-c:v', 'copy', '-c:a', 'aac', file_path,
                  ])
         else:
             proc = subprocess.Popen(
-                ['ffmpeg', '-hide_banner', '-loglevel', 'info',
-                 '-use_wallclock_as_timestamps', '1', '-rtsp_transport', 'tcp',
+                ['ffmpeg', '-loglevel', 'error',
+                 '-rtsp_transport', 'tcp',
                  '-i', session.publisher,
                  '-c:v', 'copy', file_path
                  ])
@@ -278,7 +279,7 @@ class HTTPClient:
         else:
             recording_cam = self.__recording_cam(room)
             self.__stop_recording_session(recording_cam, False)
-            recording_cam.status = RecordSessionStatus.Forwarding
+            recording_cam.status = RecordSessionStatus.Default
             self.__record_cam(cam_session)
         return True
 
@@ -294,7 +295,7 @@ class HTTPClient:
             if recorder.status == RecorderStatus.Default:
                 return False
 
-        screen: RecordSession = self.__find_record_session(room, SCREEN)
+        screen: RecordSession = self.__create_record_session(room, SCREEN)
         if screen.status == RecordSessionStatus.Recording:
             return False
 
@@ -345,24 +346,23 @@ class HTTPClient:
     def __stop_recording_session(self, session: RecordSession, remove=True):
         room = session.room
         if session.recorder_pid is not None:
+            time.sleep(0.5)
             try:
                 os.kill(session.recorder_pid, signal.SIGINT)
                 session.recorder_pid = None
             except Exception as e:
                 pass
-            time.sleep(0.1)
+            time.sleep(0.5)
         if remove:
             session.status = RecordSessionStatus.Stopped
             self.__remove_record_session(room, session.publisher)
         else:
-            session.status = RecordSessionStatus.Forwarding
+            session.status = RecordSessionStatus.Default
 
         # 更新文件信息
         file: RecordFile = self.__files[room]
         end_time = int(time.time())
         if file is not None:
-            # wait for subprocess to terminate
-            time.sleep(1)
             segment: RecordSegment = file.files[-1]
             segment.end_time = end_time
             if segment.publisher == session.publisher:
