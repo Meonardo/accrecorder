@@ -79,13 +79,6 @@ async def configure(request):
     if 'class_id' not in form:
         return json_response(False, -4, "Please input class_id!")
 
-    if 'janus' not in form:
-        return json_response(False, -4, "Please input Janus HTTP transport address, for example: http://192.168.5.12:8088")
-    janus = str(form['janus'])
-    if not janus.startswith("http"):
-        return json_response(False, -5,
-                             "Please input correct Janus HTTP transport address, for example: http://192.168.5.12:8088")
-
     class_id = form['class_id']
     video_codec = 'h264_qsv'
     if check_gpu():
@@ -273,9 +266,6 @@ if __name__ == "__main__":
         "--host", default="0.0.0.0", help="Host for HTTP server (default: 0.0.0.0)"
     )
     parser.add_argument(
-        "--f", default="192.168.5.36", help="Janus RTP forwarding host"
-    )
-    parser.add_argument(
         "--port", type=int, default=9002, help="Port for HTTP server (default: 9002)"
     )
     args = parser.parse_args()
@@ -291,8 +281,6 @@ if __name__ == "__main__":
     app.router.add_post("/record/pause", pause)
     app.router.add_post("/record/screen", recording_screen)
     app.router.add_post("/record/camera", switch_camera)
-
-    RTP_FORWARD_HOST = args.f
 
     try:
         print("Starting web server...")
