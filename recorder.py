@@ -77,6 +77,7 @@ class RecordManager:
         self.class_id = None
         self.cloud_class_id = None
         self.upload_server = None
+        self.video_codec = 'h264_qsv'
         self.status: RecorderStatus = RecorderStatus.Default
 
 
@@ -149,20 +150,35 @@ class RecordSegment:
             .format(fn=self.name, p=self.publisher, r=self.room)
 
     @async_func
-    def merge(self):
+    def merge(self, video_codec):
         if not self.is_screen or self.cam_name is None:
             return
         screen_file = self.folder + self.name
         cam_file = self.folder + self.cam_name
         output_path = self.folder + filename() + ".ts"
-        p = subprocess.Popen(['ffmpeg', '-loglevel', 'error',
-                              '-i', screen_file,
-                              '-i', cam_file,
-                              '-filter_complex',
-                              '[1]scale=iw/3:ih/3[pip];[0][pip] overlay=main_w-overlay_w-20:main_h-overlay_h-20',
-                              '-codec:v', 'h264_qsv', '-preset', 'fast', '-b:v', '6M',
-                              '-codec:a', 'copy',
-                              output_path])
+
+        if video_codec == 'h264_qsv':
+            p = subprocess.Popen(['ffmpeg', '-loglevel', 'error',
+                                  '-thread_queue_size', '1024', '-i', screen_file,
+                                  '-thread_queue_size', '1024', '-i', cam_file,
+                                  '-filter_complex',
+                                  '[1]scale=iw/3:ih/3[pip];[0][pip] overlay=main_w-overlay_w-20:main_h-overlay_h-20',
+                                  '-c:v', video_codec, '-preset', 'fast',
+                                  '-b:v', '4M', '-minrate', '4M', '-maxrate', '8M',
+                                  '-c:a', 'copy',
+                                  output_path])
+        else:
+            p = subprocess.Popen(['ffmpeg', '-loglevel', 'error',
+                                  '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda', '-thread_queue_size', '1024',
+                                  '-i', screen_file,
+                                  '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda', '-thread_queue_size', '1024',
+                                  '-i', cam_file,
+                                  '-filter_complex',
+                                  '[1]scale_npp=480:270:format=nv12[overlay];[0][overlay]overlay_cuda=x=1440:y=810',
+                                  '-c:v', video_codec, '-crf', '17', '-preset', 'p6',
+                                  '-b:v', '4M', '-minrate', '4M', '-maxrate', '8M',
+                                  '-c:a', 'copy',
+                                  output_path])
 
         print("Starting merging {s} & {c}...".format(s=self.name, c=self.cam_name))
         p.wait()

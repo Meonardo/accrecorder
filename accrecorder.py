@@ -36,6 +36,21 @@ def check_mic(mic):
     return False
 
 
+def check_gpu():
+    result = subprocess.run(['nvidia-smi', '-L'],
+                            capture_output=True, text=True, encoding="utf-8")
+
+    print('GPU: ', result)
+    target = 'nvidia'
+    if result.stderr is not None:
+        if target in result.stderr:
+            return True
+    if result.stdout is not None:
+        if target in result.stdout:
+            return True
+    return False
+
+
 # index
 async def index(request):
     content = "Recording the conference!"
@@ -72,7 +87,10 @@ async def configure(request):
                              "Please input correct Janus HTTP transport address, for example: http://192.168.5.12:8088")
 
     class_id = form['class_id']
-    success = await client.configure(room, class_id, str(room), upload_server)
+    video_codec = 'h264_qsv'
+    if check_gpu():
+        video_codec = 'h264_nvenc'
+    success = await client.configure(room, class_id, str(room), upload_server, video_codec)
     if success:
         return json_response(True, 0, "Room {} is configured".format(room))
     else:

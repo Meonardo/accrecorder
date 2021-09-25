@@ -57,11 +57,12 @@ class HTTPClient:
         session.mic = mic
         return session
 
-    async def configure(self, room, class_id, cloud_class_id, upload_server):
+    async def configure(self, room, class_id, cloud_class_id, upload_server, video_codec):
         recorder = self.__create_recorder(room)
         recorder.cloud_class_id = cloud_class_id
         recorder.class_id = class_id
         recorder.upload_server = upload_server
+        recorder.video_codec = video_codec
 
         return True
 
@@ -169,7 +170,8 @@ class HTTPClient:
             proc_c = subprocess.Popen(
                 ['ffmpeg', '-loglevel', 'error',
                  '-rtsp_transport', 'tcp', '-i', cam.publisher,
-                 '-f', 'dshow', '-use_wallclock_as_timestamps', '1', '-itsoffset', '1', '-i', mic,
+                 '-f', 'dshow',
+                 '-thread_queue_size', '512', '-rtbufsize', '512M', '-use_wallclock_as_timestamps', '1', '-itsoffset', '1', '-i', mic,
                  '-c:v', 'copy', '-c:a', 'aac', c_file_path,
                  ])
         else:
@@ -187,8 +189,8 @@ class HTTPClient:
         proc_s = subprocess.Popen(
             ['ffmpeg', '-loglevel', 'error',
              '-f', 'dshow',
-             '-i', video, '-c:v', 'h264_qsv', '-r', '30',
-             '-b:v', '4M', '-preset', 'fast', '-tune', 'zerolatency', s_file_path
+             '-thread_queue_size', '1024', '-rtbufsize', '1024M', '-i', video, '-c:v', recorder.video_codec, '-r', '30',
+             '-b:v', '4M', '-minrate', '4M', '-maxrate', '8M', '-preset', 'fast', '-tune', 'zerolatency', s_file_path
              ])
         screen.recorder_pid = proc_s.pid
 
@@ -219,7 +221,8 @@ class HTTPClient:
             proc = subprocess.Popen(
                 ['ffmpeg', '-loglevel', 'error',
                  '-rtsp_transport', 'tcp', '-i', session.publisher,
-                 '-f', 'dshow', '-use_wallclock_as_timestamps', '1', '-itsoffset', '1', '-i', mic,
+                 '-f', 'dshow',
+                 '-thread_queue_size', '512', '-rtbufsize', '512M', '-use_wallclock_as_timestamps', '1', '-itsoffset', '1', '-i', mic,
                  '-c:v', 'copy', '-c:a', 'aac', file_path,
                  ])
         else:
@@ -367,7 +370,8 @@ class HTTPClient:
             segment.end_time = end_time
             if segment.publisher == session.publisher:
                 # merge if needed
-                segment.merge()
+                recorder: RecordManager = self.__sessions[room]
+                segment.merge(recorder.video_codec)
 
     # 暂停录制
     async def pause_recording(self, room):
