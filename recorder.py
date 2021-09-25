@@ -166,7 +166,7 @@ class RecordSegment:
 
         print("Starting merging {s} & {c}...".format(s=self.name, c=self.cam_name))
         p.wait()
-        cmd = "del {sc} && ren {s} {t}".format(sc=screen_file ,s=output_path, t=self.name)
+        cmd = "del {sc} && ren {s} {t}".format(sc=screen_file, s=output_path, t=self.name)
         ret = subprocess.run(cmd, shell=True)
         print(ret)
         self.merge_finished = True
@@ -251,8 +251,8 @@ class RecordFile:
                 continue
 
         time_str = time.strftime("%Y-%m-%d_%Hh%Mm%Ss", time.localtime())
-        file_names = list(map(lambda s: "file " + self.folder + s.name, targets))
-        contents = str.join("\r\n", file_names)
+        file_names = list(map(lambda s: "file " + self.folder.replace("\\", "\\\\") + s.name, targets))
+        contents = str.join("\n", file_names)
         cmd_file_path = self.folder + "join_{}.txt".format(time_str)
 
         # 删除原来有的
