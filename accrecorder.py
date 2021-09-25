@@ -284,7 +284,6 @@ if __name__ == "__main__":
 
     try:
         print("Starting web server...")
-        print("Janus RTP forwarding address is ", args.f)
         web.run_app(
             app, access_log=None, host=args.host, port=args.port
         )
