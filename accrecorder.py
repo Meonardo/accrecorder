@@ -37,18 +37,21 @@ def check_mic(mic):
 
 
 def check_gpu():
-    result = subprocess.run(['nvidia-smi', '-L'],
+    try:
+        result = subprocess.run(['nvidia-smi', '-L'],
                             capture_output=True, text=True, encoding="utf-8")
-
-    print('GPU: ', result)
-    target = 'nvidia'
-    if result.stderr is not None:
-        if target in result.stderr:
-            return True
-    if result.stdout is not None:
-        if target in result.stdout:
-            return True
-    return False
+        print('GPU: ', result)
+        target = 'nvidia'
+        if result.stderr is not None:
+            if target in result.stderr:
+                return True
+        if result.stdout is not None:
+            if target in result.stdout:
+                return True
+        return False
+    except Exception as e:
+        print('Check GPU codec error', e)
+        return False
 
 
 # index

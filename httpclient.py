@@ -151,7 +151,7 @@ class HTTPClient:
         recorder.status = RecorderStatus.Recording
 
     def __record_screen_cam(self, screen: RecordSession, cam: RecordSession):
-        print("Room{r}, recording screen & cam{c}".format(r=screen.room, c=cam.publisher))
+        print("Room{r}, recording screen & CAM {c}".format(r=screen.room, c=cam.publisher))
         recorder: RecordManager = self.__sessions[screen.room]
         if recorder is not None:
             recorder.recording_screen = True

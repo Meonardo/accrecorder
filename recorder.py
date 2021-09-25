@@ -162,7 +162,7 @@ class RecordSegment:
                                   '-thread_queue_size', '1024', '-i', screen_file,
                                   '-thread_queue_size', '1024', '-i', cam_file,
                                   '-filter_complex',
-                                  '[1]scale=iw/3:ih/3[pip];[0][pip] overlay=main_w-overlay_w-20:main_h-overlay_h-20',
+                                  '[1]scale=iw/4:ih/4[pip];[0][pip] overlay=main_w-overlay_w:main_h-overlay_h',
                                   '-c:v', video_codec, '-preset', 'fast',
                                   '-b:v', '4M', '-minrate', '4M', '-maxrate', '8M',
                                   '-c:a', 'copy',
