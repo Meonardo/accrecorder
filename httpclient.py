@@ -1,20 +1,10 @@
-import random
-import string
 import time
 import subprocess
 import signal
 import os
-import aiohttp
 
-
-from aiohttp import ClientSession
 from recorder import RecorderStatus, RecordSession, RecordSessionStatus,\
     RecordManager, RecordFile, RecordSegment, PausedFile, SCREEN, print
-
-
-# Random Transaction ID
-def transaction_id():
-    return "".join(random.choice(string.ascii_letters) for x in range(12))
 
 
 class HTTPClient:
@@ -25,10 +15,9 @@ class HTTPClient:
         self.__files = {}
         # {room: PausedFile}
         self.__pause_files = {}
-        self.http_session: ClientSession = aiohttp.ClientSession()
 
-    async def close(self):
-        await self.http_session.close()
+    def close(self):
+        pass
 
     def __create_recorder(self, room) -> RecordManager:
         if room in self.__sessions:
@@ -57,7 +46,7 @@ class HTTPClient:
         session.mic = mic
         return session
 
-    async def configure(self, room, class_id, cloud_class_id, upload_server, video_codec):
+    def configure(self, room, class_id, cloud_class_id, upload_server, video_codec):
         recorder = self.__create_recorder(room)
         recorder.cloud_class_id = cloud_class_id
         recorder.class_id = class_id
@@ -67,7 +56,7 @@ class HTTPClient:
         return True
 
     # reset
-    async def reset(self, room):
+    def reset(self, room):
         if room not in self.__sessions:
             return False
         self.__sessions.pop(room, None)
@@ -116,7 +105,7 @@ class HTTPClient:
         return None
 
     # 开始录制视频
-    async def start_recording(self, room, publisher, mic, screen):
+    def start_recording(self, room, publisher, mic, screen):
         if room not in self.__sessions:
             print("Room{} not configure yet".format(room))
             return False
@@ -258,7 +247,7 @@ class HTTPClient:
         return publisher in recorder.sessions
 
     # 切换摄像头
-    async def switch_camera(self, room, cam, mic):
+    def switch_camera(self, room, cam, mic):
         if room not in self.__sessions:
             print("Room{} not configure yet".format(room))
             return False
@@ -287,7 +276,7 @@ class HTTPClient:
         return True
 
     # 开始录制屏幕
-    async def start_recording_screen(self, room):
+    def start_recording_screen(self, room):
         if room not in self.__sessions:
             print("Room{} not configure yet".format(room))
             return False
@@ -311,7 +300,7 @@ class HTTPClient:
         return True
 
     # 结束录制屏幕
-    async def stop_recording_screen(self, room):
+    def stop_recording_screen(self, room):
         if room not in self.__sessions:
             print("Room{} not configure yet".format(room))
             return False
@@ -374,11 +363,11 @@ class HTTPClient:
                 segment.merge(recorder.video_codec)
 
     # 暂停录制
-    async def pause_recording(self, room):
-        return await self.stop_recording(room, True)
+    def pause_recording(self, room):
+        return self.stop_recording(room, True)
 
     # 停止录制
-    async def stop_recording(self, room, pause=False):
+    def stop_recording(self, room, pause=False):
         if room not in self.__sessions:
             print("Room{} not configure yet!".format(room))
             return False
