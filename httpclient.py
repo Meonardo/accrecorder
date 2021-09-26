@@ -266,10 +266,14 @@ class HTTPClient:
                 return False
             self.__stop_recording_session(screen, False)
             recording_cam = self.__recording_cam(room)
+            if recording_cam is None:
+                return False
             self.__stop_recording_session(recording_cam, False)
             self.__record_screen_cam(screen, cam_session)
         else:
             recording_cam = self.__recording_cam(room)
+            if recording_cam is None:
+                return False
             self.__stop_recording_session(recording_cam, False)
             recording_cam.status = RecordSessionStatus.Default
             self.__record_cam(cam_session)

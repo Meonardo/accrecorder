@@ -110,6 +110,9 @@ class RequestHandler(BaseHTTPRequestHandler):
             elif path == ROUTE_STOP:
                 r = self.stop(form)
                 self.send_json_response(r)
+            elif path == ROUTE_PAUSE:
+                r = self.pause(form)
+                self.send_json_response(r)
             elif path == ROUTE_RESET:
                 r = self.reset(form)
                 self.send_json_response(r)
