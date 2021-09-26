@@ -158,10 +158,13 @@ class HTTPClient:
             mic = 'audio=' + cam.mic
             proc_c = subprocess.Popen(
                 ['ffmpeg', '-loglevel', 'error',
-                 '-rtsp_transport', 'tcp', '-i', cam.publisher,
+                 '-rtsp_transport', 'tcp', '-thread_queue_size', '512', '-i', cam.publisher,
                  '-f', 'dshow',
-                 '-thread_queue_size', '512', '-rtbufsize', '512M', '-use_wallclock_as_timestamps', '1', '-itsoffset', '1', '-i', mic,
-                 '-c:v', 'copy', '-c:a', 'aac', c_file_path,
+                 '-thread_queue_size', '512', '-rtbufsize', '512M', '-itsoffset', '1', '-i', mic,
+                 '-map', '1:a', '-map', '0:v',
+                 '-c:v', 'copy',
+                 '-c:a', 'aac', '-ar', '44100', '-b:a', '320k', '-ac', '2',
+                 c_file_path,
                  ])
         else:
             proc_c = subprocess.Popen(
@@ -176,10 +179,10 @@ class HTTPClient:
         # '-use_wallclock_as_timestamps', '1'
         video = 'video=screen-capture-recorder'
         proc_s = subprocess.Popen(
-            ['ffmpeg', '-loglevel', 'error',
+            ['ffmpeg', '-loglevel', 'info',
              '-f', 'dshow',
-             '-thread_queue_size', '1024', '-rtbufsize', '1024M', '-i', video, '-c:v', recorder.video_codec, '-r', '30',
-             '-b:v', '4M', '-minrate', '4M', '-maxrate', '8M', '-preset', 'fast', '-tune', 'zerolatency', s_file_path
+             '-thread_queue_size', '1024', '-rtbufsize', '1024M', '-i', video, '-c:v', recorder.video_codec, '-r', '25',
+             '-b:v', '6M', '-minrate', '6M', '-maxrate', '8M', s_file_path
              ])
         screen.recorder_pid = proc_s.pid
 
@@ -208,11 +211,14 @@ class HTTPClient:
         if session.mic is not None:
             mic = 'audio=' + session.mic
             proc = subprocess.Popen(
-                ['ffmpeg', '-loglevel', 'error',
-                 '-rtsp_transport', 'tcp', '-i', session.publisher,
+                ['ffmpeg', '-loglevel', 'info',
+                 '-rtsp_transport', 'tcp', '-thread_queue_size', '512', '-i', session.publisher,
                  '-f', 'dshow',
-                 '-thread_queue_size', '512', '-rtbufsize', '512M', '-use_wallclock_as_timestamps', '1', '-itsoffset', '1', '-i', mic,
-                 '-c:v', 'copy', '-c:a', 'aac', file_path,
+                 '-thread_queue_size', '512', '-rtbufsize', '512M', '-itsoffset', '1', '-i', mic,
+                 '-map', '1:a', '-map', '0:v',
+                 '-c:v', 'copy',
+                 '-c:a', 'aac', '-ar', '44100', '-b:a', '320k', '-ac', '2',
+                 file_path,
                  ])
         else:
             proc = subprocess.Popen(

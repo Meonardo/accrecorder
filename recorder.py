@@ -157,26 +157,27 @@ class RecordSegment:
         cam_file = self.folder + self.cam_name
         output_path = self.folder + filename() + ".ts"
 
+        framerate = '25'
         if video_codec == 'h264_qsv':
-            p = subprocess.Popen(['ffmpeg', '-loglevel', 'error',
+            p = subprocess.Popen(['ffmpeg', '-loglevel', 'info',
                                   '-thread_queue_size', '1024', '-i', screen_file,
                                   '-thread_queue_size', '1024', '-i', cam_file,
                                   '-filter_complex',
                                   '[1]scale=iw/4:ih/4[pip];[0][pip] overlay=main_w-overlay_w:main_h-overlay_h',
-                                  '-c:v', video_codec, '-preset', 'fast',
-                                  '-b:v', '4M', '-minrate', '4M', '-maxrate', '8M',
+                                  '-c:v', video_codec, '-preset', 'fast', '-r', framerate,
+                                  '-b:v', '6M', '-minrate', '6M', '-maxrate', '8M',
                                   '-c:a', 'copy',
                                   output_path])
         else:
-            p = subprocess.Popen(['ffmpeg', '-loglevel', 'error',
+            p = subprocess.Popen(['ffmpeg', '-loglevel', 'info',
                                   '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda', '-thread_queue_size', '1024',
                                   '-i', screen_file,
                                   '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda', '-thread_queue_size', '1024',
                                   '-i', cam_file,
                                   '-filter_complex',
                                   '[1]scale_npp=480:270:format=nv12[overlay];[0][overlay]overlay_cuda=x=1440:y=810',
-                                  '-c:v', video_codec, '-crf', '17', '-preset', 'p6',
-                                  '-b:v', '4M', '-minrate', '4M', '-maxrate', '8M',
+                                  '-c:v', video_codec, '-preset', 'p6', '-r', framerate,
+                                  '-b:v', '6M', '-minrate', '6M', '-maxrate', '8M',
                                   '-c:a', 'copy',
                                   output_path])
 
