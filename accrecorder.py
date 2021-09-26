@@ -24,7 +24,7 @@ ROUTE_INDEX = "/index.html"
 
 ROUTE_STOP = "/record/stop"
 ROUTE_START = "/record/start"
-ROUTE_CONFIGURE = "/record/reset"
+ROUTE_CONFIGURE = "/record/configure"
 ROUTE_RESET = "/record/reset"
 ROUTE_PAUSE = "/record/pause"
 ROUTE_RECORD_SCREEN = "/record/screen"
