@@ -177,12 +177,12 @@ class HTTPClient:
             p=cam.publisher, r=cam.room, pid=proc_c.pid))
         print("Room{r}, CAM{c} File create at:".format(r=cam.room, c=cam.publisher), c_file_path)
 
-        video = 'desktop'
+        video = 'video=screen-capture-recorder'
         proc_s = subprocess.Popen(
             ['ffmpeg', '-loglevel', 'info',
-             '-f', 'gdigrab',
+             '-f', 'dshow',
              '-thread_queue_size', '1024', '-rtbufsize', '1024M', '-i', video, '-c:v', recorder.video_codec,
-             '-r', '25', '-pix_fmt', 'yuv420p', '-profile:v', 'main', '-level', '4.0',
+             '-r', '25',
              '-b:v', '6M', '-minrate', '6M', '-maxrate', '8M', s_file_path
              ])
         screen.recorder_pid = proc_s.pid
