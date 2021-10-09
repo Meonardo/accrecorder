@@ -163,14 +163,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             result = subprocess.run(['nvidia-smi', '-L'],
                                     capture_output=True, text=True, encoding="utf-8")
             print('GPU: ', result)
-            target = 'nvidia'
-            if result.stderr is not None:
-                if target in result.stderr:
-                    return True
-            if result.stdout is not None:
-                if target in result.stdout:
-                    return True
-            return False
+            return result.returncode == 0
         except Exception as e:
             print('Check GPU codec error', e)
             return False
@@ -318,8 +311,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 else:
                     return self.json_response(True, 0, "Screen stop recording at room {}".format(room))
         else:
-            return self.json_response(False, -5, "Please input invalid command, 1 to start recording screen and 2 to stop "
-                                            "recording screen")
+            return self.json_response(False, -5, "Please input invalid command, 1 to start recording screen and 2 to stop recording screen")
 
     # 切换摄像头
     def switch_camera(self, form):

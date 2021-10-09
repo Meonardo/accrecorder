@@ -114,7 +114,7 @@ class RecordSession:
 
 
 class RecordStatus(Enum):
-    Defalut = 1
+    Default = 1
     Started = 2
     Processing = 10
     Finished = 19
@@ -124,13 +124,10 @@ class RecordStatus(Enum):
     Failed = -1
 
 
-class MergeFile:
-    def __init__(self, begin, end, merge):
-        self.begin = begin
-        self.end = end
-        self.merge = merge
-        self.name = None
-        self.merged_name = None
+class SegmentStatus(Enum):
+    Default = 1
+    Processing = 2
+    Finished = 3
 
 
 class RecordSegment:
@@ -143,11 +140,22 @@ class RecordSegment:
         self.cam_name = cam_name
         self.folder = folder
         self.is_screen = str(publisher) == 'screen'
-        self.merge_finished = False
+        self.processed = False
+        self.status = SegmentStatus.Default
 
     def __str__(self):
         return "RecordSegment: filename: {fn}, publisher: {p}, room: {r}\n"\
             .format(fn=self.name, p=self.publisher, r=self.room)
+
+    def process(self, video_codec, process_cam):
+        if self.is_screen:
+            self.merge(video_codec)
+        else:
+            if process_cam:
+                self.transcode(video_codec)
+            else:
+                self.status = SegmentStatus.Finished
+                print("We dont have to transcode CAM file because its going to have a filter.")
 
     @async_func
     def merge(self, video_codec):
@@ -157,6 +165,7 @@ class RecordSegment:
         cam_file = self.folder + self.cam_name
         output_path = self.folder + filename() + ".ts"
 
+        self.status = SegmentStatus.Processing
         framerate = '25'
         if video_codec == 'h264_qsv':
             p = subprocess.Popen(['ffmpeg', '-loglevel', 'info',
@@ -175,8 +184,8 @@ class RecordSegment:
                                   '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda', '-thread_queue_size', '1024',
                                   '-i', cam_file,
                                   '-filter_complex',
-                                  '[1]scale_npp=480:270:format=nv12[overlay];[0][overlay]overlay_cuda=x=1440:y=810',
-                                  '-c:v', video_codec, '-preset', 'p6', '-r', framerate,
+                                  '[1]scale_cuda=480:270:format=nv12[overlay];[0][overlay]overlay_cuda=x=1440:y=810',
+                                  '-c:v', video_codec, '-r', framerate, '-tune', 'hq',
                                   '-b:v', '6M', '-minrate', '6M', '-maxrate', '8M',
                                   '-c:a', 'copy',
                                   output_path])
@@ -186,7 +195,30 @@ class RecordSegment:
         cmd = "del {sc} && ren {s} {t}".format(sc=screen_file, s=output_path, t=self.name)
         ret = subprocess.run(cmd, shell=True)
         print(ret)
-        self.merge_finished = True
+        self.status = SegmentStatus.Finished
+
+        return
+
+    @async_func
+    def transcode(self, video_codec):
+        if self.is_screen:
+            return
+        original_file = self.folder + self.name
+        output_path = self.folder + filename() + ".ts"
+
+        self.status = SegmentStatus.Processing
+        p = subprocess.Popen(['ffmpeg', '-loglevel', 'error',
+                              '-i', original_file,
+                              '-c:v', video_codec, '-b:v', '4M', '-maxrate', '8M', '-tune', 'hq',
+                              '-c:a', 'copy',
+                              output_path])
+
+        print("Starting transcoding {s} to {t}...".format(s=original_file, t=output_path))
+        p.wait()
+        cmd = "del {sc} && ren {s} {t}".format(sc=original_file, s=output_path, t=self.name)
+        ret = subprocess.run(cmd, shell=True)
+        print(ret)
+        self.status = SegmentStatus.Finished
 
         return
 
@@ -195,7 +227,7 @@ class RecordFile:
     def __init__(self, room, folder, file: RecordSegment):
         self.room = room
         self.files = [file]
-        self.status: RecordStatus = RecordStatus.Defalut
+        self.status: RecordStatus = RecordStatus.Default
         self.folder = folder
         self._join_file_path = None
         self._file_cuts = None
@@ -207,6 +239,12 @@ class RecordFile:
 
     def add_process_callback(self, target):
         self.parent = weakref.ref(target)()
+
+    def wait_process_file(self, publisher) -> RecordSegment:
+        files = list(reversed(self.files))
+        for file in files:
+            if file.publisher == publisher and file.status == SegmentStatus.Default:
+                return file
 
     def process(self, recorder: RecordManager, pause):
         self.files = list(filter(None, self.files))
@@ -244,7 +282,7 @@ class RecordFile:
             if not pause:
                 self.parent.file_processing_callback(self.room)
             self.parent = None
-        self.clear_all_files(pause, clear_targets)
+        # self.clear_all_files(pause, clear_targets)
         if pause:
             recorder.status = RecorderStatus.Paused
         else:
@@ -256,7 +294,7 @@ class RecordFile:
 
         while True:
             try:
-                merging = next((True for file in targets if file.is_screen and not file.merge_finished), False)
+                merging = next((True for file in targets if file.status != SegmentStatus.Finished), False)
                 if merging:
                     time.sleep(1)
                     print("---------- Wait for all merge tasks -----------")

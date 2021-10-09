@@ -3,7 +3,7 @@ import subprocess
 import signal
 import os
 
-from recorder import RecorderStatus, RecordSession, RecordSessionStatus,\
+from recorder import RecorderStatus, RecordSession, RecordSessionStatus, \
     RecordManager, RecordFile, RecordSegment, PausedFile, SCREEN, print
 
 
@@ -176,12 +176,13 @@ class HTTPClient:
         print("Now publisher {p} in the room {r} is recording...\nFFmpeg subprocess pid: {pid}".format(
             p=cam.publisher, r=cam.room, pid=proc_c.pid))
         print("Room{r}, CAM{c} File create at:".format(r=cam.room, c=cam.publisher), c_file_path)
-        # '-use_wallclock_as_timestamps', '1'
-        video = 'video=screen-capture-recorder'
+
+        video = 'desktop'
         proc_s = subprocess.Popen(
             ['ffmpeg', '-loglevel', 'info',
-             '-f', 'dshow',
-             '-thread_queue_size', '1024', '-rtbufsize', '1024M', '-i', video, '-c:v', recorder.video_codec, '-r', '25',
+             '-f', 'gdigrab',
+             '-thread_queue_size', '1024', '-rtbufsize', '1024M', '-i', video, '-c:v', recorder.video_codec,
+             '-r', '25', '-pix_fmt', 'yuv420p', '-profile:v', 'main', '-level', '4.0',
              '-b:v', '6M', '-minrate', '6M', '-maxrate', '8M', s_file_path
              ])
         screen.recorder_pid = proc_s.pid
@@ -211,7 +212,7 @@ class HTTPClient:
         if session.mic is not None:
             mic = 'audio=' + session.mic
             proc = subprocess.Popen(
-                ['ffmpeg', '-loglevel', 'info',
+                ['ffmpeg', '-loglevel', 'error',
                  '-rtsp_transport', 'tcp', '-thread_queue_size', '512', '-i', session.publisher,
                  '-f', 'dshow',
                  '-thread_queue_size', '512', '-rtbufsize', '512M', '-itsoffset', '1', '-i', mic,
@@ -230,11 +231,13 @@ class HTTPClient:
         session.recorder_pid = proc.pid
 
         print("Room{r}, CAM{c} File create at:".format(r=session.room, c=session.publisher), file_path)
-        print("Now publisher {p} in the room {r} is recording...\nFFmpeg subprocess pid: {pid}".format(p=session.publisher, r=session.room, pid=proc.pid))
+        print("Now publisher {p} in the room {r} is recording...\nFFmpeg subprocess pid: {pid}".format(
+            p=session.publisher, r=session.room, pid=proc.pid))
         session.status = RecordSessionStatus.Recording
 
         # 保存文件信息
-        segment = RecordSegment(name=name, begin_time=begin_time, room=session.room, publisher=session.publisher, folder=session.folder)
+        segment = RecordSegment(name=name, begin_time=begin_time, room=session.room, publisher=session.publisher,
+                                folder=session.folder)
         if session.room not in self.__files:
             file = RecordFile(room=session.room, folder=session.folder, file=segment)
             self.__files[session.room] = file
@@ -365,12 +368,12 @@ class HTTPClient:
         file: RecordFile = self.__files[room]
         end_time = int(time.time())
         if file is not None:
-            segment: RecordSegment = file.files[-1]
-            segment.end_time = end_time
-            if segment.publisher == session.publisher:
+            segment: RecordSegment = file.wait_process_file(session.publisher)
+            if segment is not None:
+                segment.end_time = end_time
                 # merge if needed
                 recorder: RecordManager = self.__sessions[room]
-                segment.merge(recorder.video_codec)
+                segment.process(recorder.video_codec, not recorder.recording_screen)
 
     # 暂停录制
     def pause_recording(self, room):
