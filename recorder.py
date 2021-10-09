@@ -282,7 +282,7 @@ class RecordFile:
             if not pause:
                 self.parent.file_processing_callback(self.room)
             self.parent = None
-        # self.clear_all_files(pause, clear_targets)
+        self.clear_all_files(pause, clear_targets)
         if pause:
             recorder.status = RecorderStatus.Paused
         else:
