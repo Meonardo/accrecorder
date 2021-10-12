@@ -247,7 +247,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         mic = None
         if 'mic' in form:
             mic = str(form['mic'])
-            if not self.check_mic(mic):
+            if len(mic) > 0 and not self.check_mic(mic):
                 return self.json_response(False, -4, "Invalidate microphone device!")
 
         success = client.start_recording(room, cam, mic, enable_screen)
@@ -330,7 +330,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         mic = None
         if 'mic' in form:
             mic = str(form['mic'])
-            if not self.check_mic(mic):
+            if len(mic) > 0 and not self.check_mic(mic):
                 return self.json_response(False, -4, "Invalidate microphone device!")
 
         success = client.switch_camera(room, cam, mic)

@@ -154,7 +154,7 @@ class HTTPClient:
         c_name = str(cam.name) + "_" + str(begin_time) + ".ts"
         c_file_path = folder + c_name
 
-        if cam.mic is not None:
+        if cam.mic is not None and len(cam.mic) > 0:
             mic = 'audio=' + cam.mic
             proc_c = subprocess.Popen(
                 ['ffmpeg', '-loglevel', 'error',
@@ -182,7 +182,7 @@ class HTTPClient:
             ['ffmpeg', '-loglevel', 'info',
              '-f', 'dshow',
              '-thread_queue_size', '1024', '-rtbufsize', '1024M', '-i', video, '-c:v', recorder.video_codec,
-             '-r', '25',
+             '-r', '25', '-video_size', '1920x1080',
              '-b:v', '6M', '-minrate', '6M', '-maxrate', '8M', s_file_path
              ])
         screen.recorder_pid = proc_s.pid
@@ -209,7 +209,7 @@ class HTTPClient:
         name = session.name + "_" + str(begin_time) + ".ts"
         file_path = folder + name
 
-        if session.mic is not None:
+        if session.mic is not None and len(session.mic) > 0:
             mic = 'audio=' + session.mic
             proc = subprocess.Popen(
                 ['ffmpeg', '-loglevel', 'error',
