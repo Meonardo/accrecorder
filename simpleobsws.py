@@ -7,14 +7,22 @@ import uuid
 import time
 import inspect
 
+
 class ConnectionFailure(Exception):
     pass
+
+
 class MessageTimeout(Exception):
     pass
+
+
 class MessageFormatError(Exception):
     pass
+
+
 class EventRegistrationError(Exception):
     pass
+
 
 class _TimeoutNotifier:
     def __init__(self, loop, cond, timeout):
@@ -22,19 +30,23 @@ class _TimeoutNotifier:
         self.loop = loop
         self.cond = cond
         self.timeout = timeout
+
     async def run(self):
         await asyncio.sleep(self.timeout)
         async with self.cond:
             self.timed_out = True
             self.cond.notify_all()
+
     async def __aenter__(self):
         self.timeout_task = self.loop.create_task(self.run())
         return self
+
     async def __aexit__(self, exc_type, exc, tb):
         self.timeout_task.cancel()
 
+
 class obsws:
-    def __init__(self, host='localhost', port=4444, password=None, call_poll_delay=100, loop: asyncio.BaseEventLoop=None):
+    def __init__(self, host='localhost', port=4444, password=None, call_poll_delay=100, loop: asyncio.BaseEventLoop = None):
         self.ws = None
         self.answers = {}
         self.loop = loop or asyncio.get_event_loop()
@@ -47,7 +59,7 @@ class obsws:
         self.password = password
 
     async def connect(self):
-        if self.ws != None and self.ws.open:
+        if self.ws is not None and self.ws.open:
             raise ConnectionFailure('Server is already connected')
         self.answers = {}
         self.ws = await websockets.connect('ws://{}:{}'.format(self.host, self.port), max_size=2**23)
@@ -57,7 +69,7 @@ class obsws:
             await self.disconnect()
             raise ConnectionFailure('Server returned error to GetAuthRequired request: {}'.format(authResponse['error']))
         if authResponse['authRequired']:
-            if self.password == None:
+            if self.password is None:
                 await self.disconnect()
                 raise ConnectionFailure('A password is required by the server but was not provided')
             secret = base64.b64encode(hashlib.sha256((self.password + authResponse['salt']).encode('utf-8')).digest())
@@ -69,16 +81,16 @@ class obsws:
 
     async def disconnect(self):
         await self.ws.close()
-        if self.recv_task != None:
+        if self.recv_task is not None:
             self.recv_task.cancel()
         self.recv_task = None
 
     async def call(self, request_type, data=None, timeout=15):
-        if type(data) != dict and data != None:
+        if type(data) != dict and data is not None:
             raise MessageFormatError('Input data must be valid dict object')
         request_id = str(uuid.uuid1())
-        requestpayload = {'message-id':request_id, 'request-type':request_type}
-        if data != None:
+        requestpayload = {'message-id': request_id, 'request-type': request_type}
+        if data is not None:
             for key in data.keys():
                 if key == 'message-id':
                     continue
@@ -93,11 +105,11 @@ class obsws:
         raise MessageTimeout('The request with type {} timed out after {} seconds.'.format(request_type, timeout))
 
     async def emit(self, request_type, data=None):
-        if type(data) != dict and data != None:
+        if type(data) != dict and data is not None:
             raise MessageFormatError('Input data must be valid dict object')
         request_id = str(uuid.uuid1())
         requestpayload = {'message-id':'emit_{}'.format(request_id), 'request-type':request_type}
-        if data != None:
+        if data is not None:
             for key in data.keys():
                 if key == 'message-id':
                     continue
@@ -105,14 +117,14 @@ class obsws:
         await self.ws.send(json.dumps(requestpayload))
 
     def register(self, function, event=None):
-        if inspect.iscoroutinefunction(function) == False:
+        if not inspect.iscoroutinefunction(function):
             raise EventRegistrationError('Registered functions must be async')
         else:
             self.event_functions.append((function, event))
 
     def unregister(self, function, event=None):
         for c, t in self.event_functions:
-            if (c == function) and (event == None or t == event):
+            if (c == function) and (event is None or t == event):
                 self.event_functions.remove((c, t))
 
     async def _ws_recv_task(self):
@@ -125,7 +137,7 @@ class obsws:
                 result = json.loads(message)
                 if 'update-type' in result:
                     for callback, trigger in self.event_functions:
-                        if trigger == None or trigger == result['update-type']:
+                        if trigger is None or trigger == result['update-type']:
                             self.loop.create_task(callback(result))
                 elif 'message-id' in result:
                     if result['message-id'].startswith('emit_'): # We drop any responses to emit requests to not leak memory
