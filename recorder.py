@@ -80,6 +80,19 @@ class RecordManager:
         self.video_codec = 'h264_qsv'
         self.status: RecorderStatus = RecorderStatus.Default
 
+    # 创建录像房间的文件夹, 当前房间会话的所有文件都在此文件夹中
+    def create_file_folder(self):
+        p = platform.system().lower()
+        if p == "windows":
+            file_dir = os.path.expanduser(os.getenv('USERPROFILE')) + '\\recordings\\' + str(self.room) + '\\'
+        else:
+            file_dir = str(Path.home()) + "/recordings/" + str(self.room) + "/"
+
+        Path(file_dir).mkdir(parents=True, exist_ok=True)
+        self.folder = file_dir
+
+        print("\nroom folder created at: ", self.folder, "\n")
+
 
 class RecordSession:
     def __init__(self, room, publisher, started_time, mic=None):
