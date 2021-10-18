@@ -11,8 +11,7 @@ from urllib.parse import urlparse
 from recorder import RecorderStatus, RecordManager, print
 
 loop = asyncio.get_event_loop()
-ws = simpleobsws.obsws(host='192.168.5.186', port=9999, password='kick', loop=loop)
-
+ws = simpleobsws.obsws(host='127.0.0.1', port=9999, password='kick', loop=loop)
 
 MAIN_SCENE = 'MainScene'
 SCREEN_W = 1920
@@ -58,7 +57,7 @@ class SceneItem:
         }
         r = await ws.call('DeleteSceneItem', obj)
         print("Delete Scene Item {s}: {r}".format(s=self.name, r=r))
-    
+
     async def reset(self):
         obj = {
             'scene': self.scene,
@@ -284,11 +283,10 @@ class ObsClient:
             "y": 0,
             "source_cx": SCREEN_W,
             "source_cy": SCREEN_H,
-            "is_local_file": True,
+            "is_local_file": False,
             "hw_decode": True,
             "input": rtsp,
-            "input_format": "file",
-            "local_file": rtsp,
+            "input_format": "rtsp",
             "buffering_mb": 1
         }
         obj = {
@@ -362,11 +360,13 @@ class ObsClient:
 
         recorder.record_file_path = recorder.folder + output_format + "." + OUTPUT_FILE_EXT
 
+        asyncio.set_event_loop(loop)
+        tasks = [
+            self.scene.file_settings(recorder.folder, room, output_format),
+            self.scene.start_recording(cam_source_name, screen)
+        ]
         loop.run_until_complete(
-            asyncio.gather(
-                self.scene.file_settings(recorder.folder, room, output_format),
-                self.scene.start_recording(cam_source_name, screen)
-            )
+            asyncio.gather(*tasks)
         )
 
         recorder.status = RecorderStatus.Recording
@@ -396,21 +396,25 @@ class ObsClient:
             x = SCREEN_W - SCREEN_W * CAM_SCALE
             y = SCREEN_H - SCREEN_H * CAM_SCALE
             if cam_item and recording_cam_item:
+                tasks = [
+                    cam_item.update_position_scale(x, y, CAM_SCALE),
+                    cam_item.set_visible(True),
+                    recording_cam_item.set_visible(False),
+                ]
+                asyncio.set_event_loop(loop)
                 loop.run_until_complete(
-                    asyncio.gather(
-                        cam_item.update_position_scale(x, y, CAM_SCALE),
-                        cam_item.set_visible(True),
-                        recording_cam_item.set_visible(False),
-                    )
+                    asyncio.gather(*tasks)
                 )
         else:
             if cam_item and recording_cam_item:
+                tasks = [
+                    cam_item.update_position_scale(0, 0, 1),
+                    cam_item.set_visible(True),
+                    recording_cam_item.set_visible(False),
+                ]
+                asyncio.set_event_loop(loop)
                 loop.run_until_complete(
-                    asyncio.gather(
-                        cam_item.update_position_scale(0, 0, 1),
-                        cam_item.set_visible(True),
-                        recording_cam_item.set_visible(False),
-                    )
+                    asyncio.gather(*tasks)
                 )
 
         recorder.recording_cam = cam
@@ -438,12 +442,13 @@ class ObsClient:
         if screen_item and cam_item:
             x = SCREEN_W - SCREEN_W * CAM_SCALE
             y = SCREEN_H - SCREEN_H * CAM_SCALE
+            tasks = [
+                screen_item.set_visible(True),
+                cam_item.set_visible(True),
+                cam_item.update_position_scale(x, y, CAM_SCALE)]
+            asyncio.set_event_loop(loop)
             loop.run_until_complete(
-                asyncio.gather(
-                    screen_item.set_visible(True),
-                    cam_item.set_visible(True),
-                    cam_item.update_position_scale(x, y, CAM_SCALE)
-                )
+                asyncio.gather(*tasks)
             )
             return True
         else:
@@ -465,12 +470,14 @@ class ObsClient:
         screen_item = self.scene.find_item(SCREEN_SOURCE_NAME)
         cam_item = self.scene.find_item(recording_cam_source_name)
         if screen_item and cam_item:
+            tasks = [
+                screen_item.set_visible(False),
+                cam_item.set_visible(True),
+                cam_item.update_position_scale(0, 0, 1)
+            ]
+            asyncio.set_event_loop(loop)
             loop.run_until_complete(
-                asyncio.gather(
-                    screen_item.set_visible(False),
-                    cam_item.set_visible(True),
-                    cam_item.update_position_scale(0, 0, 1)
-                )
+                asyncio.gather(*tasks)
             )
             recorder.recording_screen = False
             return True
@@ -504,7 +511,8 @@ class ObsClient:
             recorder.thumbnail_file_path = recorder.folder + "thumbnail_{}.png".format(time_str)
             # 截图
             p = subprocess.Popen(
-                ['ffmpeg', '-loglevel', 'error', '-i', recorder.record_file_path, '-ss', '00:00:01.000', '-vframes', '1',
+                ['ffmpeg', '-loglevel', 'error', '-i', recorder.record_file_path, '-ss', '00:00:01.000', '-vframes',
+                 '1',
                  recorder.thumbnail_file_path])
             p.wait()
 
@@ -515,7 +523,7 @@ class ObsClient:
             loop.run_until_complete(
                 self.upload(recorder)
             )
-        return False
+        return True
 
     # 上传操作
     @staticmethod
@@ -531,7 +539,7 @@ class ObsClient:
         data = FormData()
         data.add_field('videoFile',
                        open(recorder.record_file_path, 'rb'),
-                       filename='output.mp4',
+                       filename='output.mkv',
                        content_type='multipart/form-data')
         data.add_field('imageFile',
                        open(recorder.thumbnail_file_path, 'rb'),
