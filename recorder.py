@@ -79,6 +79,10 @@ class RecordManager:
         self.upload_server = None
         self.video_codec = 'h264_qsv'
         self.status: RecorderStatus = RecorderStatus.Default
+        self.recording_cam = None
+        self.folder = None
+        self.record_file_path = None
+        self.thumbnail_file_path = None
 
     # 创建录像房间的文件夹, 当前房间会话的所有文件都在此文件夹中
     def create_file_folder(self):

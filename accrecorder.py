@@ -8,7 +8,7 @@ import json
 from collections import namedtuple
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
-from httpclient import HTTPClient
+from obsclient import ObsClient
 from recorder import print
 
 ROOT = os.path.abspath(os.path.dirname(__file__))
@@ -30,7 +30,7 @@ ROUTE_PAUSE = "/record/pause"
 ROUTE_RECORD_SCREEN = "/record/screen"
 ROUTE_SWITCH_CAMERA = "/record/camera"
 
-client = HTTPClient()
+obs_client = ObsClient()
 
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
@@ -173,7 +173,7 @@ class RequestHandler(BaseHTTPRequestHandler):
     def shutdown():
         print("Web server is shutting down...")
         # close client session
-        client.close()
+        obs_client.close()
 
     # Send a JSON Response.
     @staticmethod
@@ -202,11 +202,26 @@ class RequestHandler(BaseHTTPRequestHandler):
         if 'class_id' not in form:
             return self.json_response(False, -4, "Please input class_id!")
 
+        if 'cam1' not in form:
+            return self.json_response(False, -2, "Please input RTSP cam address!")
+        cam1 = str(form["cam1"])
+        if not cam1.startswith('rtsp'):
+            return self.json_response(False, -3, "Please input correct RTSP cam address!")
+
+        if 'cam2' not in form:
+            return self.json_response(False, -2, "Please input RTSP cam address!")
+        cam2 = str(form["cam2"])
+        if not cam2.startswith('rtsp'):
+            return self.json_response(False, -3, "Please input correct RTSP cam address!")
+
+        mic = None
+        if 'mic' in form:
+            mic = str(form['mic'])
+            if len(mic) > 0 and not self.check_mic(mic):
+                return self.json_response(False, -4, "Invalidate microphone device!")
+
         class_id = form['class_id']
-        video_codec = 'h264_qsv'
-        if self.check_gpu():
-            video_codec = 'h264_nvenc'
-        success = client.configure(room, class_id, str(room), upload_server, video_codec)
+        success = obs_client.configure(room, class_id, str(room), upload_server, cam1, cam2, mic)
         if success:
             return self.json_response(True, 0, "Room {} is configured".format(room))
         else:
@@ -220,7 +235,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         if not room.isdigit():
             return self.json_response(False, -2, "Please input correct Room number!")
 
-        success = client.reset(room)
+        success = obs_client.reset(room)
         if success:
             return self.json_response(True, 0, "Room {} is reset".format(room))
         else:
@@ -244,13 +259,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         if 'screen' in form:
             enable_screen = int(form['screen']) == 1
 
-        mic = None
-        if 'mic' in form:
-            mic = str(form['mic'])
-            if len(mic) > 0 and not self.check_mic(mic):
-                return self.json_response(False, -4, "Invalidate microphone device!")
-
-        success = client.start_recording(room, cam, mic, enable_screen)
+        success = obs_client.start_recording(room, cam, enable_screen)
         if success:
             return self.json_response(True, 0, "Start recording at room {}".format(room))
         else:
@@ -264,7 +273,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         if not room.isdigit():
             return self.json_response(False, -1, "Please input correct Room number!")
 
-        success = client.stop_recording(room)
+        success = obs_client.stop_recording(room)
         if success:
             return self.json_response(True, 0, "Stop recording at room {}".format(room))
         else:
@@ -278,7 +287,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         if not room.isdigit():
             return self.json_response(False, -1, "Please input correct Room number!")
 
-        success = client.pause_recording(room)
+        success = obs_client.pause_recording(room)
         if success:
             return self.json_response(True, 0, "Pause recording at room {}".format(room))
         else:
@@ -299,13 +308,13 @@ class RequestHandler(BaseHTTPRequestHandler):
         cmd = int(cmd)
         if 0 < cmd < 3:
             if cmd == 1:
-                success = client.start_recording_screen(room)
+                success = obs_client.start_recording_screen(room)
                 if not success:
                     return self.json_response(False, -4, "Recording screen does not available currently!")
                 else:
                     return self.json_response(True, 0, "Screen start recording at room {}".format(room))
             else:
-                success = client.stop_recording_screen(room)
+                success = obs_client.stop_recording_screen(room)
                 if not success:
                     return self.json_response(False, -4, "Current screen is NOT recording!")
                 else:
@@ -327,13 +336,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         if not cam.startswith('rtsp'):
             return self.json_response(False, -3, "Please input correct publisher identifier!")
 
-        mic = None
-        if 'mic' in form:
-            mic = str(form['mic'])
-            if len(mic) > 0 and not self.check_mic(mic):
-                return self.json_response(False, -4, "Invalidate microphone device!")
-
-        success = client.switch_camera(room, cam, mic)
+        success = obs_client.switch_camera(room, cam)
         if success:
             return self.json_response(True, 0, "Switch to CAM {}".format(cam))
         else:
