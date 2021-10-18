@@ -1,4 +1,5 @@
 import asyncio
+from asyncio import tasks
 import os
 import simpleobsws
 import sys
@@ -8,7 +9,7 @@ import subprocess
 
 from aiohttp import FormData
 from urllib.parse import urlparse
-from recorder import RecorderStatus, RecordManager, print
+from recorder import RecordStatus, RecorderStatus, RecordManager, print
 
 loop = asyncio.get_event_loop()
 ws = simpleobsws.obsws(host='127.0.0.1', port=9999, password='kick', loop=loop)
@@ -18,7 +19,7 @@ SCREEN_W = 1920
 SCREEN_H = 1080
 CAM_SCALE = 1 / 3
 SCREEN_SOURCE_NAME = 'Screen'
-OUTPUT_FILE_EXT = 'mkv'
+OUTPUT_FILE_EXT = 'mp4'
 
 
 class SceneItem:
@@ -152,10 +153,14 @@ class ObsClient:
         # {room: RecordManager}
         self.__sessions = {}
         self.scene: Scene = None
+        self.obs_connected = False
 
     def close(self):
         self.scene = None
-        ws.disconnect()
+        loop.run_until_complete(
+            ws.disconnect()
+        )
+        self.obs_connected = False
         loop.close()
 
     def __create_recorder(self, room) -> RecordManager:
@@ -178,7 +183,10 @@ class ObsClient:
         return r
 
     async def __create_scene(self, cam1, cam2, mic):
-        await ws.connect()
+        if not self.obs_connected:
+            await ws.connect()
+            self.obs_connected = True
+
         scene_name = MAIN_SCENE
         scene = await self.__find_scene(scene_name)
         if scene is not None:
@@ -356,7 +364,7 @@ class ObsClient:
         recorder.recording_cam = cam
         cam_source_name = self.__rtsp_to_str(cam)
         time_str = time.strftime("%Y-%m-%d_%Hh%Mm%Ss", time.localtime())
-        output_format = "output_{}".format(room) + time_str
+        output_format = "output_{}_".format(room) + time_str
 
         recorder.record_file_path = recorder.folder + output_format + "." + OUTPUT_FILE_EXT
 
@@ -450,6 +458,7 @@ class ObsClient:
             loop.run_until_complete(
                 asyncio.gather(*tasks)
             )
+            recorder.recording_screen = True
             return True
         else:
             return False
@@ -501,22 +510,35 @@ class ObsClient:
         loop.run_until_complete(
             self.scene.stop_recording()
         )
-
+        if pause:
+            recorder.status = RecorderStatus.Paused
+        else:
+            recorder.status = RecorderStatus.Stopped
         return self.__processing_file(room, recorder, pause)
 
-    def __processing_file(self, room, recorder, pause=False):
+    def __processing_file(self, room, recorder: RecordManager, pause=False):
         print("Starting processing file from room =", room)
         if recorder.record_file_path is not None:
+            recorder.status = RecordStatus.Processing
+
+            # Set a timeout 20s
+            timeout = time.time() + 20
+            while True:
+                if time.time() > timeout:
+                    break
+                time.sleep(1)
+                if os.path.isfile(recorder.record_file_path):
+                    break
+
             time_str = time.strftime("%Y-%m-%d_%Hh%Mm%Ss", time.localtime())
             recorder.thumbnail_file_path = recorder.folder + "thumbnail_{}.png".format(time_str)
             # 截图
             p = subprocess.Popen(
-                ['ffmpeg', '-loglevel', 'error', '-i', recorder.record_file_path, '-ss', '00:00:01.000', '-vframes',
-                 '1',
+                ['ffmpeg', '-loglevel', 'info', '-i', recorder.record_file_path, '-ss', '00:00:01.000', '-vframes', '1',
                  recorder.thumbnail_file_path])
             p.wait()
 
-            print("\n\n***********\nDone! file at path: ", recorder.record_file_path, "\n***********\n\n")
+            print("\n***********\nDone! file at path: ", recorder.record_file_path, "\n***********\n")
             print("***********\nDone! thumbnail at path: ", recorder.thumbnail_file_path, "\n***********\n\n")
 
             # 上传
@@ -528,6 +550,7 @@ class ObsClient:
     # 上传操作
     @staticmethod
     async def upload(recorder: RecordManager):
+        recorder.status = RecordStatus.Uploading
         session = aiohttp.ClientSession()
         if recorder.class_id is None or recorder.cloud_class_id is None or recorder.upload_server is None:
             return None
@@ -553,4 +576,5 @@ class ObsClient:
         except Exception as e:
             print("Room{r}, received upload exception: {e}".format(r=recorder.room, e=e))
 
+        recorder.status = RecordStatus.Finished
         await session.close()
