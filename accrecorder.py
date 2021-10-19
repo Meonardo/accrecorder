@@ -197,7 +197,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             return self.json_response(False, -2, "Please input upload server address!")
         upload_server = str(form['upload_server'])
         if not upload_server.startswith("http://"):
-            return self.json_response(False, -2, "Upload server address is invalidate!")
+            if not upload_server.startswith("https://"):
+                return self.json_response(False, -2, "Upload server address is invalidate!")
 
         if 'class_id' not in form:
             return self.json_response(False, -4, "Please input class_id!")
