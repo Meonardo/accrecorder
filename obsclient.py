@@ -195,7 +195,6 @@ class ObsClient:
         else:
             # 创建当前 scene
             await self.create_scene(scene_name)
-
         # 选中当前 Scene
         await ws.call('SetCurrentScene', {"scene-name": MAIN_SCENE})
         # 创建 screen capture sources
@@ -267,9 +266,17 @@ class ObsClient:
             "source_cx": SCREEN_W,
             "source_cy": SCREEN_H
         }
-        type = "monitor_capture"
-        if sys.platform == "darwin":
+        all_types = await ws.call('GetSourceTypesList')
+        all_types = all_types['types']
+        type_ids = [type['typeId'] for type in all_types if 'typeId' in type]
+        print(type_ids)
+
+        type = 'monitor_capture'
+        if 'monitor_capture' in type_ids:
+            type = "monitor_capture"
+        elif 'display_capture' in type_ids:
             type = "display_capture"
+
         obj = {
             "sceneName": scene_name,
             "sourceName": source_name,
