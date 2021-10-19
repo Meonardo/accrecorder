@@ -271,15 +271,12 @@ class ObsClient:
     async def __create_screen_capture(scene_name: str, source_name: str):
         source_settings = {
             "alignment": 5,
-            "cx": SCREEN_W,
-            "cy": SCREEN_H,
             "locked": True,
             "name": source_name,
             "render": True,
             "x": 0,
             "y": 0,
-            "source_cx": SCREEN_W,
-            "source_cy": SCREEN_H
+            "monitor": 1
         }
         all_types = await ws.call('GetSourceTypesList')
         all_types = all_types['types']
@@ -298,7 +295,22 @@ class ObsClient:
             "sourceKind": type,
             "sourceSettings": source_settings
         }
-        return await ws.call('CreateSource', obj)
+        await ws.call('CreateSource', obj)
+
+        obj = {
+            "item": source_name,
+            'position': {
+                'alignment': 5,
+                'x': 0,
+                'y': 0
+            },
+            'bounds': {
+                'type': 'OBS_BOUNDS_SCALE_TO_WIDTH',
+                'x': SCREEN_W,
+                'y': SCREEN_H
+            },
+        }
+        return await ws.call('SetSceneItemProperties', obj)
 
     @staticmethod
     async def __create_rtsp_source(scene_name: str, source_name: str, rtsp: str):
