@@ -541,7 +541,8 @@ class ObsClient:
             recorder.thumbnail_file_path = recorder.folder + "thumbnail_{}.png".format(time_str)
             # 截图
             p = subprocess.Popen(
-                ['ffmpeg', '-loglevel', 'info', '-i', recorder.record_file_path, '-ss', '00:00:01.000', '-vframes', '1',
+                ['ffmpeg', '-loglevel', 'info', '-i', recorder.record_file_path,
+                 '-ss', '1', '-s', '1920x1080', '-f', 'image2', '-vframes', '1',
                  recorder.thumbnail_file_path])
             p.wait()
 
