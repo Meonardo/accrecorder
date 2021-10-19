@@ -1,15 +1,21 @@
 import asyncio
-from asyncio import tasks
 import os
 import simpleobsws
-import sys
 import time
 import aiohttp
-import subprocess
 
+from threading import Thread
 from aiohttp import FormData
 from urllib.parse import urlparse
 from recorder import RecordStatus, RecorderStatus, RecordManager, print
+
+
+def async_func(f):
+    def wrapper(*args, **kwargs):
+        thr = Thread(target = f, args = args, kwargs = kwargs)
+        thr.start()
+    return wrapper
+
 
 loop = asyncio.get_event_loop()
 ws = simpleobsws.obsws(host='127.0.0.1', port=9999, password='kick', loop=loop)
@@ -20,6 +26,7 @@ SCREEN_H = 1080
 CAM_SCALE = 1 / 3
 SCREEN_SOURCE_NAME = 'Screen'
 OUTPUT_FILE_EXT = 'mp4'
+OUTPUT_IMG_EXT = 'png'
 
 
 class SceneItem:
@@ -145,6 +152,14 @@ class Scene:
 
         # 结束录制
         await self.__stop_recording()
+
+    # 截屏
+    async def screenshot(self, file):
+        obj = {
+            "sourceName": self.name,
+            "saveToFilePath": file
+        }
+        await ws.call('TakeSourceScreenshot', obj)
 
 
 class ObsClient:
@@ -385,7 +400,20 @@ class ObsClient:
         )
 
         recorder.status = RecorderStatus.Recording
+        self.__take_screenshot(room, time_str, recorder)
+
         return True
+
+    @async_func
+    def __take_screenshot(self, room, time_str, recorder: RecordManager):
+        output_format = "output_{}_".format(room) + time_str
+        recorder.thumbnail_file_path = recorder.folder + output_format + "." + OUTPUT_IMG_EXT
+        time.sleep(2)
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(
+            self.scene.screenshot(recorder.thumbnail_file_path)
+        )
+        print("Room{r} Take screen shot successfully at file path {p}".format(r=room, p=recorder.thumbnail_file_path))
 
     # 切换摄像头
     def switch_camera(self, room, cam):
@@ -537,17 +565,7 @@ class ObsClient:
                 if os.path.isfile(recorder.record_file_path):
                     break
 
-            time_str = time.strftime("%Y-%m-%d_%Hh%Mm%Ss", time.localtime())
-            recorder.thumbnail_file_path = recorder.folder + "thumbnail_{}.png".format(time_str)
-            # 截图
-            p = subprocess.Popen(
-                ['ffmpeg', '-loglevel', 'info', '-i', recorder.record_file_path,
-                 '-ss', '1', '-s', '1920x1080', '-f', 'image2', '-vframes', '1',
-                 recorder.thumbnail_file_path])
-            p.wait()
-
             print("\n***********\nDone! file at path: ", recorder.record_file_path, "\n***********\n")
-            print("***********\nDone! thumbnail at path: ", recorder.thumbnail_file_path, "\n***********\n\n")
 
             # 上传
             loop.run_until_complete(
