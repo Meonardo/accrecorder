@@ -569,7 +569,7 @@ class ObsClient:
         data = FormData()
         data.add_field('videoFile',
                        open(recorder.record_file_path, 'rb'),
-                       filename='output.mkv',
+                       filename='output.mp4',
                        content_type='multipart/form-data')
         data.add_field('imageFile',
                        open(recorder.thumbnail_file_path, 'rb'),
