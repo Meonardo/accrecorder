@@ -654,3 +654,48 @@ class ObsClient:
             recorder.status = RecordStatus.Finished
             await session.close()
             print("Room {r} file uploaded".format(r=recorder.room))
+
+    # 获取上传文件的信息，如：时长和文件大小
+    @staticmethod
+    def fetch_filesize(video_path):
+        import json
+        import subprocess
+
+        result = subprocess.check_output(
+            f'ffprobe -v quiet -print_format json -show_format "{video_path}"',
+            shell=True).decode()
+        print(result)
+        format_info = json.loads(result)['format']
+        print(format_info)
+
+        duration = format_info['duration']
+        file_size = format_info['size']
+        return duration, file_size
+
+    @staticmethod
+    async def fetch_upload_key(recorder: RecordManager, session: aiohttp.ClientSession):
+        print("Fetch upload key request")
+        path = recorder.upload_server
+        payload = {
+            "classId": recorder.class_id,
+            "cloudClassId": recorder.cloud_class_id
+        }
+        try:
+            async with session.post(path, data=payload) as response:
+                return await response.json()
+        except Exception as e:
+            print("Room {r}, received fetch upload key request exception: {e}".format(r=recorder.room, e=e))
+
+    @staticmethod
+    async def upload_file(session: aiohttp.ClientSession, upload_params: dict):
+        print("Fetch upload key request")
+        path = upload_params['host']
+        accessid = upload_params['upload_params']
+        payload = {
+            "accessid": accessid,
+        }
+        try:
+            async with session.post(path, data=payload) as response:
+                return await response.json()
+        except Exception as e:
+            print("Received upload file request exception: {e}".format(e=e))
