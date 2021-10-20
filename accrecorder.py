@@ -226,6 +226,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         if success:
             return self.json_response(True, 0, "Room {} is configured".format(room))
         else:
+            if not obs_client.obs_connected:
+                return self.json_response(False, -10, "Connect recorder server failed.")
             return self.json_response(False, -6, "Current room {} already configured".format(room))
 
     # Reset record session in case of client had unexceptional satiation
@@ -264,6 +266,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         if success:
             return self.json_response(True, 0, "Start recording at room {}".format(room))
         else:
+            if not obs_client.obs_connected:
+                return self.json_response(False, -10, "Connect recorder server failed.")
             return self.json_response(False, -9, "Current room {r} is recording".format(r=room))
 
     # check stop command
@@ -278,6 +282,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         if success:
             return self.json_response(True, 0, "Stop recording at room {}".format(room))
         else:
+            if not obs_client.obs_connected:
+                return self.json_response(False, -10, "Connect recorder server failed.")
             return self.json_response(False, -3, "Current room is not recording")
 
     # check stop command
@@ -292,6 +298,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         if success:
             return self.json_response(True, 0, "Pause recording at room {}".format(room))
         else:
+            if not obs_client.obs_connected:
+                return self.json_response(False, -10, "Connect recorder server failed.")
             return self.json_response(False, -3, "Current room is not recording")
 
     def record_screen(self, form):
@@ -321,6 +329,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 else:
                     return self.json_response(True, 0, "Screen stop recording at room {}".format(room))
         else:
+            if not obs_client.obs_connected:
+                return self.json_response(False, -10, "Connect recorder server failed.")
             return self.json_response(False, -5, "Please input invalid command, 1 to start recording screen and 2 to stop recording screen")
 
     # 切换摄像头
@@ -341,6 +351,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         if success:
             return self.json_response(True, 0, "Switch to CAM {}".format(cam))
         else:
+            if not obs_client.obs_connected:
+                return self.json_response(False, -10, "Connect recorder server failed.")
             return self.json_response(False, -3, "You already have record CAM {}".format(cam))
 
 

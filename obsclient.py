@@ -197,10 +197,34 @@ class ObsClient:
         r = o.netloc.replace('.', '_') + o.path.replace('/', '_')
         return r
 
-    async def __create_scene(self, cam1, cam2, mic):
-        if not self.obs_connected:
+    @async_func
+    def __retry(self, cam1, cam2, mic):
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(
+            self.__reconnect_obs(cam1, cam2, mic)
+        )
+
+    async def __reconnect_obs(self, cam1, cam2, mic):
+        try:
             await ws.connect()
             self.obs_connected = True
+            print("Obs connected")
+            await self.__create_scene(cam1, cam2, mic)
+        except Exception as exc:
+            print("Obs connection exception, reconnecting...", exc)
+            await asyncio.sleep(3)
+            await self.__reconnect_obs(cam1, cam2, mic)
+
+    async def __create_scene(self, cam1, cam2, mic):
+        if not self.obs_connected:
+            try:
+                await ws.connect()
+                print("Obs connected")
+                self.obs_connected = True
+            except Exception as exc:
+                print("Obs connection exception", exc)
+                self.__retry(cam1, cam2, mic)
+                return
 
         scene_name = MAIN_SCENE
         scene = await self.__find_scene(scene_name)
@@ -372,7 +396,7 @@ class ObsClient:
         loop.run_until_complete(
             self.__create_scene(cam1, cam2, mic)
         )
-        return True
+        return self.obs_connected
 
     # reset
     def reset(self, room):
@@ -384,6 +408,8 @@ class ObsClient:
 
     # 开始录制视频
     def start_recording(self, room, cam, screen):
+        if not self.obs_connected:
+            return False
         if room not in self.__sessions:
             print("Room {} not configure yet".format(room))
             return False
@@ -429,6 +455,8 @@ class ObsClient:
 
     # 切换摄像头
     def switch_camera(self, room, cam):
+        if not self.obs_connected:
+            return False
         if room not in self.__sessions:
             print("Room {} not configure yet".format(room))
             return False
@@ -477,6 +505,8 @@ class ObsClient:
 
     # 开始录制屏幕
     def start_recording_screen(self, room):
+        if not self.obs_connected:
+            return False
         if room not in self.__sessions:
             print("Room {} is not configured yet".format(room))
             return False
@@ -512,6 +542,8 @@ class ObsClient:
 
     # 结束录制屏幕
     def stop_recording_screen(self, room):
+        if not self.obs_connected:
+            return False
         if room not in self.__sessions:
             print("Room {} not configure yet".format(room))
             return False
@@ -546,6 +578,8 @@ class ObsClient:
 
     # 停止录制
     def stop_recording(self, room, pause=False):
+        if not self.obs_connected:
+            return False
         if room not in self.__sessions:
             print("Room {} not configure yet!".format(room))
             return False
