@@ -385,14 +385,14 @@ class ObsClient:
     # 开始录制视频
     def start_recording(self, room, cam, screen):
         if room not in self.__sessions:
-            print("Room{} not configure yet".format(room))
+            print("Room {} not configure yet".format(room))
             return False
 
         recorder: RecordManager = self.__sessions[room]
         if recorder is not None:
             recorder.recording_screen = screen
             if recorder.status == RecorderStatus.Recording:
-                print("Room{} is recording...".format(room))
+                print("Room {} is recording...".format(room))
                 return False
 
         recorder.recording_cam = cam
@@ -425,21 +425,21 @@ class ObsClient:
         loop.run_until_complete(
             self.scene.screenshot(recorder.thumbnail_file_path)
         )
-        print("Room{r} Take screen shot successfully at file path {p}".format(r=room, p=recorder.thumbnail_file_path))
+        print("Room {r} Take screen shot successfully at file path {p}".format(r=room, p=recorder.thumbnail_file_path))
 
     # 切换摄像头
     def switch_camera(self, room, cam):
         if room not in self.__sessions:
-            print("Room{} not configure yet".format(room))
+            print("Room {} not configure yet".format(room))
             return False
         recorder: RecordManager = self.__sessions[room]
         if recorder is None:
             return False
         if recorder.status != RecorderStatus.Recording:
-            print("Room{} not recording yet".format(room))
+            print("Room {} not recording yet".format(room))
             return False
         if recorder.recording_cam is not None and recorder.recording_cam == cam:
-            print("Room{r} CAM {c} is recording".format(r=room, c=cam))
+            print("Room {r} CAM {c} is recording".format(r=room, c=cam))
             return False
 
         recording_cam_source_name = self.__rtsp_to_str(recorder.recording_cam)
@@ -478,17 +478,17 @@ class ObsClient:
     # 开始录制屏幕
     def start_recording_screen(self, room):
         if room not in self.__sessions:
-            print("Room{} is not configured yet".format(room))
+            print("Room {} is not configured yet".format(room))
             return False
         recorder: RecordManager = self.__sessions[room]
         if recorder is None:
             return False
         else:
             if recorder.status == RecorderStatus.Default:
-                print("Room{} is not recording".format(room))
+                print("Room {} is not recording".format(room))
                 return False
             if recorder.recording_screen:
-                print("Room{} Screen is recording".format(room))
+                print("Room {} Screen is recording".format(room))
                 return False
 
         recording_cam_source_name = self.__rtsp_to_str(recorder.recording_cam)
@@ -513,13 +513,13 @@ class ObsClient:
     # 结束录制屏幕
     def stop_recording_screen(self, room):
         if room not in self.__sessions:
-            print("Room{} not configure yet".format(room))
+            print("Room {} not configure yet".format(room))
             return False
         recorder: RecordManager = self.__sessions[room]
         if recorder is None:
             return False
         if not recorder.recording_screen:
-            print("Room{}, Screen is not recording yet".format(room))
+            print("Room {}, Screen is not recording yet".format(room))
             return False
 
         recording_cam_source_name = self.__rtsp_to_str(recorder.recording_cam)
@@ -547,11 +547,11 @@ class ObsClient:
     # 停止录制
     def stop_recording(self, room, pause=False):
         if room not in self.__sessions:
-            print("Room{} not configure yet!".format(room))
+            print("Room {} not configure yet!".format(room))
             return False
         recorder: RecordManager = self.__sessions[room]
         if recorder.status.value < RecorderStatus.Recording.value:
-            print("Room{}, not recording yet, please try again.".format(room))
+            print("Room {}, not recording yet, please try again.".format(room))
             return False
 
         loop.run_until_complete(
@@ -561,8 +561,12 @@ class ObsClient:
             recorder.status = RecorderStatus.Paused
         else:
             recorder.status = RecorderStatus.Stopped
-        return self.__processing_file(room, recorder, pause)
 
+        # 异步处理/上传文件
+        self.__processing_file(room, recorder, pause)
+        return True
+
+    @async_func
     def __processing_file(self, room, recorder: RecordManager, pause=False):
         print("Starting processing file from room =", room)
         if recorder.record_file_path is not None:
@@ -583,7 +587,6 @@ class ObsClient:
             loop.run_until_complete(
                 self.upload(recorder)
             )
-        return True
 
     # 上传操作
     @staticmethod
@@ -606,13 +609,14 @@ class ObsClient:
                        open(recorder.thumbnail_file_path, 'rb'),
                        filename='thumbnail.png',
                        content_type='multipart/form-data')
-        print(u"Room{r}, Uploading files begin...".format(r=recorder.room))
+        print(u"Room {r}, Uploading files begin...".format(r=recorder.room))
         try:
             async with session.post(path, data=data) as response:
                 r = await response.json()
-                print(u"Room{r}, Uploading files response: {o}".format(r=recorder.room, o=r))
+                print(u"Room {r}, Uploading files response: {o}".format(r=recorder.room, o=r))
         except Exception as e:
-            print("Room{r}, received upload exception: {e}".format(r=recorder.room, e=e))
-
-        recorder.status = RecordStatus.Finished
-        await session.close()
+            print("Room {r}, received upload exception: {e}".format(r=recorder.room, e=e))
+        finally:
+            recorder.status = RecordStatus.Finished
+            await session.close()
+            print("Room {r} file uploaded".format(r=recorder.room))
