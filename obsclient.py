@@ -623,37 +623,40 @@ class ObsClient:
             )
 
     # 上传操作
-    @staticmethod
-    async def upload(recorder: RecordManager):
+    async def upload(self, recorder: RecordManager):
         recorder.status = RecordStatus.Uploading
         session = aiohttp.ClientSession()
         if recorder.class_id is None or recorder.cloud_class_id is None or recorder.upload_server is None:
             return None
         if not os.path.isfile(recorder.record_file_path) or not os.path.isfile(recorder.thumbnail_file_path):
             return None
-        path = recorder.upload_server + "?classId={c}&cloudClassId={cc}".format(c=recorder.class_id,
-                                                                                cc=recorder.cloud_class_id)
-        print("Upload URL:", path)
-        data = FormData()
-        data.add_field('videoFile',
-                       open(recorder.record_file_path, 'rb'),
-                       filename='output.mp4',
-                       content_type='multipart/form-data')
-        data.add_field('imageFile',
-                       open(recorder.thumbnail_file_path, 'rb'),
-                       filename='thumbnail.png',
-                       content_type='multipart/form-data')
-        print(u"Room {r}, Uploading files begin...".format(r=recorder.room))
-        try:
-            async with session.post(path, data=data) as response:
-                r = await response.json()
-                print(u"Room {r}, Uploading files response: {o}".format(r=recorder.room, o=r))
-        except Exception as e:
-            print("Room {r}, received upload exception: {e}".format(r=recorder.room, e=e))
-        finally:
-            recorder.status = RecordStatus.Finished
+
+        upload_keys = await self.fetch_upload_key(recorder, session)
+        if 'video' in upload_keys and 'image' in upload_keys and 'prefix' in upload_keys:
+            video_params = upload_keys['video']
+            image_params = upload_keys['image']
+            prefix = upload_keys['prefix']
+            # 先上传图片
+            image_response = await self.upload_file(recorder, session, image_params, False)
+            if image_response:
+                # 上传视频
+                video_response = await self.upload_file(recorder, session, video_params)
+                # 获取视频信息, 时长和文件大小
+                duration, file_size = self.fetch_filesize(recorder.record_file_path)
+                payload = {
+                    "cloudClassId": recorder.cloud_class_id,
+                    "fileSize": file_size,
+                    "duration": duration,
+                    "fileType": "mp4",
+                    "filePlayPath": video_response,
+                    "fileCoverPath": image_response,
+                }
+                # 添加记录
+                resp = await self.insert_records(recorder, session, payload, prefix)
+                print(resp)
+                recorder.status = RecordStatus.Finished
+
             await session.close()
-            print("Room {r} file uploaded".format(r=recorder.room))
 
     # 获取上传文件的信息，如：时长和文件大小
     @staticmethod
@@ -672,10 +675,11 @@ class ObsClient:
         file_size = format_info['size']
         return duration, file_size
 
+    # 获取上传信息
     @staticmethod
     async def fetch_upload_key(recorder: RecordManager, session: aiohttp.ClientSession):
         print("Fetch upload key request")
-        path = recorder.upload_server
+        path = "http://192.168.5.141:13980" + "/cloudClass/classVideo/api/getUploadKey"
         payload = {
             "classId": recorder.class_id,
             "cloudClassId": recorder.cloud_class_id
@@ -687,15 +691,55 @@ class ObsClient:
             print("Room {r}, received fetch upload key request exception: {e}".format(r=recorder.room, e=e))
 
     @staticmethod
-    async def upload_file(session: aiohttp.ClientSession, upload_params: dict):
-        print("Fetch upload key request")
+    async def upload_file(recorder: RecordManager, session: aiohttp.ClientSession, upload_params: dict, is_video=True):
         path = upload_params['host']
-        accessid = upload_params['upload_params']
+
+        file_type = "videoFile"
+        file_name = "output.mp4"
+        file_path = recorder.record_file_path
+        if not is_video:
+            file_name = "output.png"
+            file_path = recorder.thumbnail_file_path
+            file_type = "imageFile"
+
+        key = upload_params['dir'] + file_name
         payload = {
-            "accessid": accessid,
+            "OSSAccessKeyId": upload_params['accessid'],
+            "success_action_status": 200,
+            "signature": upload_params['signature'],
+            "key": key,
+            "policy": upload_params['policy'],
         }
+        data = FormData()
+
+        for key in payload:
+            data.add_field(key, payload[key])
+        data.add_field(file_type,
+                       open(file_path, 'rb'),
+                       filename=file_name,
+                       content_type='multipart/form-data')
+
+        print(u"Room {r}, Uploading {f} begin...".format(r=recorder.room, f=file_type))
         try:
-            async with session.post(path, data=payload) as response:
-                return await response.json()
+            async with session.post(path, data=data) as response:
+                print(u"Room {r}, Upload {f} successfully.".format(r=recorder.room, f=file_type))
+                r = await response.read()
+                print("Upload response: ", r)
+                return path + key
         except Exception as e:
             print("Received upload file request exception: {e}".format(e=e))
+            return None
+
+    # 添加文件记录至远端
+    @staticmethod
+    async def insert_records(recorder: RecordManager, session: aiohttp.ClientSession, obj: dict, host: str):
+        import json
+        print("Insert record request")
+        path = host + "/cloudClass/classVideo/api/insertClassVideo"
+
+        obj = json.dumps(obj, indent=4).encode(encoding='utf_8')
+        try:
+            async with session.post(path, data=obj) as response:
+                return await response.json()
+        except Exception as e:
+            print("Room {r}, received insert record request exception: {e}".format(r=recorder.room, e=e))
