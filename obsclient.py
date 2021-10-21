@@ -647,7 +647,7 @@ class ObsClient:
                     "cloudClassId": recorder.cloud_class_id,
                     "fileSize": file_size,
                     "duration": duration,
-                    "fileType": "mp4",
+                    "fileType": OUTPUT_FILE_EXT,
                     "filePlayPath": video_response,
                     "fileCoverPath": image_response,
                 }
@@ -656,7 +656,8 @@ class ObsClient:
                 print(resp)
                 recorder.status = RecordStatus.Finished
 
-            await session.close()
+            if not session.closed:
+                await session.close()
 
     # 获取上传文件的信息，如：时长和文件大小
     @staticmethod
@@ -679,7 +680,7 @@ class ObsClient:
     @staticmethod
     async def fetch_upload_key(recorder: RecordManager, session: aiohttp.ClientSession):
         print("Fetch upload key request")
-        path = "http://192.168.5.141:13980" + "/cloudClass/classVideo/api/getUploadKey"
+        path = recorder.upload_server + "/cloudClass/classVideo/api/getUploadKey"
         payload = {
             "classId": recorder.class_id,
             "cloudClassId": recorder.cloud_class_id
@@ -687,20 +688,20 @@ class ObsClient:
         try:
             async with session.post(path, data=payload) as response:
                 return await response.json()
-        except Exception as e:
+        except aiohttp.ClientError as e:
             print("Room {r}, received fetch upload key request exception: {e}".format(r=recorder.room, e=e))
+            await session.close()
 
     @staticmethod
     async def upload_file(recorder: RecordManager, session: aiohttp.ClientSession, upload_params: dict, is_video=True):
         path = upload_params['host']
-
-        file_type = "videoFile"
-        file_name = "output.mp4"
+        
+        time_str = time.strftime("%Y-%m-%d_%Hh%Mm%Ss", time.localtime())
+        file_name = time_str + "." + OUTPUT_FILE_EXT
         file_path = recorder.record_file_path
         if not is_video:
-            file_name = "output.png"
+            file_name = time_str + "." + OUTPUT_IMG_EXT
             file_path = recorder.thumbnail_file_path
-            file_type = "imageFile"
 
         key = upload_params['dir'] + file_name
         payload = {
@@ -714,21 +715,21 @@ class ObsClient:
 
         for key in payload:
             data.add_field(key, payload[key])
-        data.add_field(file_type,
+        data.add_field('file',
                        open(file_path, 'rb'),
                        filename=file_name,
                        content_type='multipart/form-data')
 
-        print(u"Room {r}, Uploading {f} begin...".format(r=recorder.room, f=file_type))
+        print(u"Room {r}, Uploading {f} begin...".format(r=recorder.room, f=file_name))
         try:
             async with session.post(path, data=data) as response:
-                print(u"Room {r}, Upload {f} successfully.".format(r=recorder.room, f=file_type))
+                print(u"Room {r}, Upload {f} successfully.".format(r=recorder.room, f=file_name))
                 r = await response.read()
                 print("Upload response: ", r)
-                return path + key
-        except Exception as e:
+                if response.status == 200:
+                    return path + key
+        except aiohttp.ClientError as e:
             print("Received upload file request exception: {e}".format(e=e))
-            return None
 
     # 添加文件记录至远端
     @staticmethod
@@ -741,5 +742,6 @@ class ObsClient:
         try:
             async with session.post(path, data=obj) as response:
                 return await response.json()
-        except Exception as e:
+        except aiohttp.ClientError as e:
             print("Room {r}, received insert record request exception: {e}".format(r=recorder.room, e=e))
+            await session.close()
