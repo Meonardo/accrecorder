@@ -1,8 +1,11 @@
 import asyncio
+from base64 import encode
 import os
+import uuid
 import simpleobsws
 import time
 import aiohttp
+import platform
 
 from threading import Thread
 from aiohttp import FormData
@@ -242,11 +245,19 @@ class ObsClient:
         print("Create Source:", r)
 
         cam1_source_name = self.__rtsp_to_str(cam1)
-        r = await self.__create_rtsp_source(scene_name, cam1_source_name, cam1)
-        print("Create Source:", r)
         cam2_source_name = self.__rtsp_to_str(cam2)
-        r = await self.__create_rtsp_source(scene_name, cam2_source_name, cam2)
-        print("Create Source:", r)
+        p = platform.system().lower()
+        if p == 'windows':  
+            r = await self.__create_rtsp_source(scene_name, cam1_source_name, cam1)
+            print("Create Source:", r)
+            r = await self.__create_rtsp_source(scene_name, cam2_source_name, cam2)
+            print("Create Source:", r)
+        else:
+            r = await self.__create_file_source(scene_name, cam1_source_name, '/Users/meonardo/Downloads/video1.mp4')
+            print("Create Source:", r)
+            r = await self.__create_file_source(scene_name, cam2_source_name, '/Users/meonardo/Downloads/video2.mp4')
+            print("Create Source:", r)
+        
         # 刷新 scene 对象
         self.scene = await self.__find_scene(scene_name)
 
@@ -632,6 +643,8 @@ class ObsClient:
             return None
 
         upload_keys = await self.fetch_upload_key(recorder, session)
+        if upload_keys is None:
+            return None
         if 'video' in upload_keys and 'image' in upload_keys and 'prefix' in upload_keys:
             video_params = upload_keys['video']
             image_params = upload_keys['image']
@@ -646,13 +659,13 @@ class ObsClient:
                 payload = {
                     "cloudClassId": recorder.cloud_class_id,
                     "fileSize": file_size,
-                    "duration": duration,
-                    "fileType": OUTPUT_FILE_EXT,
-                    "filePlayPath": video_response,
-                    "fileCoverPath": image_response,
+                    "duration": int(float(duration)),
+                    "fileType": "." + OUTPUT_FILE_EXT,
+                    "filePlayPath": prefix + video_response,
+                    "fileCoverPath": prefix + image_response,
                 }
                 # 添加记录
-                resp = await self.insert_records(recorder, session, payload, prefix)
+                resp = await self.insert_records(recorder, session, payload, recorder.upload_server)
                 print(resp)
                 recorder.status = RecordStatus.Finished
 
@@ -704,30 +717,58 @@ class ObsClient:
             file_path = recorder.thumbnail_file_path
 
         key = upload_params['dir'] + file_name
-        payload = {
-            "OSSAccessKeyId": upload_params['accessid'],
-            "success_action_status": 200,
-            "signature": upload_params['signature'],
-            "key": key,
-            "policy": upload_params['policy'],
-        }
-        data = FormData()
-
-        for key in payload:
-            data.add_field(key, payload[key])
-        data.add_field('file',
-                       open(file_path, 'rb'),
-                       filename=file_name,
-                       content_type='multipart/form-data')
-
         print(u"Room {r}, Uploading {f} begin...".format(r=recorder.room, f=file_name))
+
+        boundary = (uuid.uuid4().hex)[-16:]
+
+        with open(file_path, "rb") as f:
+            file_bytes = f.read()  
+        
+        if is_video:
+            content_type = 'video/' + OUTPUT_FILE_EXT.lower()
+        else:
+            content_type = 'image/' + OUTPUT_IMG_EXT.lower()
+        field_dict = {
+            'key': key,
+            'policy': upload_params['policy'],
+            'OSSAccessKeyId': upload_params['accessid'],
+            'success_action_status': 200,
+            'signature': upload_params['signature'],
+            'filename': file_name,
+            'content-type': content_type
+        }
+
+        def __build_post_body(field_dict, boundary, file):
+            post_body = b''
+            # 编码表单域
+            for k in field_dict:
+                v = field_dict[k]
+                if k != 'content' and k != 'content-type':
+                    post_body += bytes('''--{0}\r\nContent-Disposition: form-data; name=\"{1}\"\r\n\r\n{2}\r\n'''.format(boundary, k, v), encoding='utf-8')
+            # 上传文件的内容，必须作为最后一个表单域
+            post_body += bytes('''--{0}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{1}\"\r\nContent-Type: {2}\r\n\r\n'''.format(
+            boundary, field_dict['filename'], field_dict['content-type']), encoding='utf-8')
+            # 加上表单域结束符
+            post_body += file
+            post_body += bytes('\r\n--{0}--\r\n'.format(boundary), encoding='utf-8')
+            return post_body
+
+        def __build_post_headers(body_len, boundary, headers=None):
+            headers = headers if headers else {}
+            headers['Content-Length'] = str(body_len)
+            headers['Content-Type'] = 'multipart/form-data; boundary={0}'.format(boundary)
+            return headers
+
+        body = __build_post_body(field_dict, boundary, file_bytes)
+        headers = __build_post_headers(len(body), boundary)
+        
         try:
-            async with session.post(path, data=data) as response:
+            async with session.post(path, data=body, headers=headers) as response:
                 print(u"Room {r}, Upload {f} successfully.".format(r=recorder.room, f=file_name))
                 r = await response.read()
                 print("Upload response: ", r)
                 if response.status == 200:
-                    return path + key
+                    return key
         except aiohttp.ClientError as e:
             print("Received upload file request exception: {e}".format(e=e))
 
@@ -738,9 +779,9 @@ class ObsClient:
         print("Insert record request")
         path = host + "/cloudClass/classVideo/api/insertClassVideo"
 
-        obj = json.dumps(obj, indent=4).encode(encoding='utf_8')
+        obj = json.dumps(obj)
         try:
-            async with session.post(path, data=obj) as response:
+            async with session.post(path, data=obj, headers={"Content-type": "application/json"}) as response:
                 return await response.json()
         except aiohttp.ClientError as e:
             print("Room {r}, received insert record request exception: {e}".format(r=recorder.room, e=e))
