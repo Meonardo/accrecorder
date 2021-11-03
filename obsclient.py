@@ -1,5 +1,4 @@
 import asyncio
-from base64 import encode
 import os
 import uuid
 import simpleobsws
@@ -8,7 +7,6 @@ import aiohttp
 import platform
 
 from threading import Thread
-from aiohttp import FormData
 from urllib.parse import urlparse
 from recorder import RecordStatus, RecorderStatus, RecordManager, print
 
@@ -398,12 +396,9 @@ class ObsClient:
         return await ws.call('CreateSource', obj)
 
     # configure
-    def configure(self, room, class_id, cloud_class_id, upload_server, cam1, cam2, mic):
-        recorder = self.__create_recorder(room)
-        recorder.cloud_class_id = cloud_class_id
-        recorder.class_id = class_id
-        recorder.upload_server = upload_server
-
+    def configure(self, room, cam1, cam2, mic):
+        # create recorder session
+        self.__create_recorder(room)
         loop.run_until_complete(
             self.__create_scene(cam1, cam2, mic)
         )
@@ -590,14 +585,14 @@ class ObsClient:
     # 停止录制
     def stop_recording(self, room, pause=False):
         if not self.obs_connected:
-            return False
+            return None
         if room not in self.__sessions:
             print("Room {} not configure yet!".format(room))
-            return False
+            return None
         recorder: RecordManager = self.__sessions[room]
         if recorder.status.value < RecorderStatus.Recording.value:
             print("Room {}, not recording yet, please try again.".format(room))
-            return False
+            return None
 
         loop.run_until_complete(
             self.scene.stop_recording()
@@ -607,11 +602,10 @@ class ObsClient:
         else:
             recorder.status = RecorderStatus.Stopped
 
-        # 异步处理/上传文件
-        self.__processing_file(room, recorder, pause)
-        return True
+        data = self.__processing_file(room, recorder, pause)
+        recorder.status = RecorderStatus.Finished
+        return data
 
-    @async_func
     def __processing_file(self, room, recorder: RecordManager, pause=False):
         print("Starting processing file from room =", room)
         if recorder.record_file_path is not None:
@@ -628,10 +622,15 @@ class ObsClient:
 
             print("\n***********\nDone! file at path: ", recorder.record_file_path, "\n***********\n")
 
-            # 上传
-            loop.run_until_complete(
-                self.upload(recorder)
-            )
+            # 获取视频信息, 时长和文件大小
+            duration, file_size = self.fetch_filesize(recorder.record_file_path)
+            data = {
+                "image_path": recorder.thumbnail_file_path,
+                "video_path": recorder.record_file_path,
+                "video_size": file_size,
+                "video_duration": str(int(float(duration)))
+            }
+            return data
 
     # 上传操作
     async def upload(self, recorder: RecordManager):

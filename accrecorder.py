@@ -183,7 +183,11 @@ class RequestHandler(BaseHTTPRequestHandler):
             state = 1
         else:
             state = code
-        return {"state": state, "code": data}
+        if isinstance(data, dict) or isinstance(data, list):
+            resp = {"state": state, "code": "Please see 'data' field.", "data": data}
+        else:
+            resp = {"state": state, "code": data}
+        return resp
 
     # Configure record server per room
     def configure(self, form):
@@ -192,16 +196,6 @@ class RequestHandler(BaseHTTPRequestHandler):
         room = form["room"]
         if not room.isdigit():
             return self.json_response(False, -3, "Please input correct Room number!")
-
-        if 'upload_server' not in form:
-            return self.json_response(False, -2, "Please input upload server address!")
-        upload_server = str(form['upload_server'])
-        if not upload_server.startswith("http://"):
-            if not upload_server.startswith("https://"):
-                return self.json_response(False, -2, "Upload server address is invalidate!")
-
-        if 'class_id' not in form:
-            return self.json_response(False, -4, "Please input class_id!")
 
         if 'cam1' not in form:
             return self.json_response(False, -2, "Please input RTSP cam address!")
@@ -221,8 +215,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             if len(mic) > 0 and not self.check_mic(mic):
                 return self.json_response(False, -4, "Invalidate microphone device!")
 
-        class_id = form['class_id']
-        success = obs_client.configure(room, class_id, str(room), upload_server, cam1, cam2, mic)
+        success = obs_client.configure(str(room), cam1, cam2, mic)
         if success:
             return self.json_response(True, 0, "Room {} is configured".format(room))
         else:
@@ -278,9 +271,9 @@ class RequestHandler(BaseHTTPRequestHandler):
         if not room.isdigit():
             return self.json_response(False, -1, "Please input correct Room number!")
 
-        success = obs_client.stop_recording(room)
-        if success:
-            return self.json_response(True, 0, "Stop recording at room {}".format(room))
+        data = obs_client.stop_recording(room)
+        if data is not None:
+            return self.json_response(True, 0, data)
         else:
             if not obs_client.obs_connected:
                 return self.json_response(False, -10, "Connect recorder server failed.")
@@ -294,9 +287,9 @@ class RequestHandler(BaseHTTPRequestHandler):
         if not room.isdigit():
             return self.json_response(False, -1, "Please input correct Room number!")
 
-        success = obs_client.pause_recording(room)
-        if success:
-            return self.json_response(True, 0, "Pause recording at room {}".format(room))
+        data = obs_client.pause_recording(room)
+        if data is not None:
+            return self.json_response(True, 0, data)
         else:
             if not obs_client.obs_connected:
                 return self.json_response(False, -10, "Connect recorder server failed.")
