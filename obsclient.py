@@ -8,7 +8,7 @@ import platform
 
 from threading import Thread
 from urllib.parse import urlparse
-from recorder import RecordStatus, RecorderStatus, RecordManager, print
+from recorder import RecorderStatus, RecorderSession, print
 
 
 def async_func(f):
@@ -19,7 +19,7 @@ def async_func(f):
 
 
 loop = asyncio.get_event_loop()
-ws = simpleobsws.obsws(host='127.0.0.1', port=9999, password='kick', loop=loop)
+ws = simpleobsws.obsws(host='127.0.0.1', port=9991, password='amdox', loop=loop)
 
 MAIN_SCENE = 'MainScene'
 SCREEN_W = 1920
@@ -93,6 +93,19 @@ class SceneItem:
             },
         }
         return await ws.call('SetSceneItemProperties', obj)
+
+    async def reorder(self, items):
+        if len(items) < 2:
+            return
+
+        order_items = [{"name": i} for i in items]
+
+        obj = {
+            'scene': self.name,
+            'items': order_items,
+        }
+        print("Reorder scene items to:", items)
+        await ws.call('ReorderSceneItems', obj)
 
 
 class Scene:
@@ -179,14 +192,14 @@ class ObsClient:
         self.obs_connected = False
         loop.close()
 
-    def __create_recorder(self, room) -> RecordManager:
+    def __create_recorder(self, room) -> RecorderSession:
         if room in self.__sessions:
-            session: RecordManager = self.__sessions[room]
+            session: RecorderSession = self.__sessions[room]
             if session.status.value < RecorderStatus.Processing.value:
                 print("Current recorder is in the room")
                 return session
 
-        recorder = RecordManager(room=room)
+        recorder = RecorderSession(room=room)
         recorder.status = RecorderStatus.Starting
         recorder.create_file_folder()
         self.__sessions[room] = recorder
@@ -420,7 +433,7 @@ class ObsClient:
             print("Room {} not configure yet".format(room))
             return False
 
-        recorder: RecordManager = self.__sessions[room]
+        recorder: RecorderSession = self.__sessions[room]
         if recorder is not None:
             recorder.recording_screen = screen
             if recorder.status == RecorderStatus.Recording:
@@ -449,7 +462,7 @@ class ObsClient:
         return True
 
     @async_func
-    def __take_screenshot(self, room, time_str, recorder: RecordManager):
+    def __take_screenshot(self, room, time_str, recorder: RecorderSession):
         output_format = "output_{}_".format(room) + time_str
         recorder.thumbnail_file_path = recorder.folder + output_format + "." + OUTPUT_IMG_EXT
         time.sleep(2)
@@ -466,7 +479,7 @@ class ObsClient:
         if room not in self.__sessions:
             print("Room {} not configure yet".format(room))
             return False
-        recorder: RecordManager = self.__sessions[room]
+        recorder: RecorderSession = self.__sessions[room]
         if recorder is None:
             return False
         if recorder.status != RecorderStatus.Recording:
@@ -516,7 +529,7 @@ class ObsClient:
         if room not in self.__sessions:
             print("Room {} is not configured yet".format(room))
             return False
-        recorder: RecordManager = self.__sessions[room]
+        recorder: RecorderSession = self.__sessions[room]
         if recorder is None:
             return False
         else:
@@ -553,7 +566,7 @@ class ObsClient:
         if room not in self.__sessions:
             print("Room {} not configure yet".format(room))
             return False
-        recorder: RecordManager = self.__sessions[room]
+        recorder: RecorderSession = self.__sessions[room]
         if recorder is None:
             return False
         if not recorder.recording_screen:
@@ -589,7 +602,7 @@ class ObsClient:
         if room not in self.__sessions:
             print("Room {} not configure yet!".format(room))
             return None
-        recorder: RecordManager = self.__sessions[room]
+        recorder: RecorderSession = self.__sessions[room]
         if recorder.status.value < RecorderStatus.Recording.value:
             print("Room {}, not recording yet, please try again.".format(room))
             return None
@@ -606,7 +619,7 @@ class ObsClient:
         recorder.status = RecorderStatus.Finished
         return data
 
-    def __processing_file(self, room, recorder: RecordManager, pause=False):
+    def __processing_file(self, room, recorder: RecorderSession, pause=False):
         print("Starting processing file from room =", room)
         if recorder.record_file_path is not None:
             recorder.status = RecordStatus.Processing
@@ -633,7 +646,7 @@ class ObsClient:
             return data
 
     # 上传操作
-    async def upload(self, recorder: RecordManager):
+    async def upload(self, recorder: RecorderSession):
         recorder.status = RecordStatus.Uploading
         session = aiohttp.ClientSession()
         if recorder.class_id is None or recorder.cloud_class_id is None or recorder.upload_server is None:
@@ -690,7 +703,7 @@ class ObsClient:
 
     # 获取上传信息
     @staticmethod
-    async def fetch_upload_key(recorder: RecordManager, session: aiohttp.ClientSession):
+    async def fetch_upload_key(recorder: RecorderSession, session: aiohttp.ClientSession):
         print("Fetch upload key request")
         path = recorder.upload_server + "/cloudClass/classVideo/api/getUploadKey"
         payload = {
@@ -705,7 +718,7 @@ class ObsClient:
             await session.close()
 
     @staticmethod
-    async def upload_file(recorder: RecordManager, session: aiohttp.ClientSession, upload_params: dict, is_video=True):
+    async def upload_file(recorder: RecorderSession, session: aiohttp.ClientSession, upload_params: dict, is_video=True):
         path = upload_params['host']
         
         time_str = time.strftime("%Y-%m-%d_%Hh%Mm%Ss", time.localtime())
@@ -773,7 +786,7 @@ class ObsClient:
 
     # 添加文件记录至远端
     @staticmethod
-    async def insert_records(recorder: RecordManager, session: aiohttp.ClientSession, obj: dict, host: str):
+    async def insert_records(recorder: RecorderSession, session: aiohttp.ClientSession, obj: dict, host: str):
         import json
         print("Insert record request")
         path = host + "/cloudClass/classVideo/api/insertClassVideo"
