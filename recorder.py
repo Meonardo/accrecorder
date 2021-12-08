@@ -7,8 +7,6 @@ import datetime
 from threading import Thread
 from pathlib import Path
 from enum import Enum
-from aiohttp import FormData
-from urllib.parse import urlparse
 
 TIME_THRESHOLD = 3
 SCREEN = 'screen'

@@ -21,7 +21,6 @@ HTTP_STATUS = {"OK": ResponseStatus(code=200, message="OK"),
                "INTERNAL_SERVER_ERROR": ResponseStatus(code=500, message="Internal server error")}
 
 ROUTE_INDEX = "/index.html"
-
 ROUTE_STOP = "/record/stop"
 ROUTE_START = "/record/start"
 ROUTE_CONFIGURE = "/record/configure"
@@ -29,6 +28,7 @@ ROUTE_RESET = "/record/reset"
 ROUTE_PAUSE = "/record/pause"
 ROUTE_RECORD_SCREEN = "/record/screen"
 ROUTE_SWITCH_CAMERA = "/record/camera"
+OBS_PROC = "obs64"
 
 obs_client = ObsClient()
 
@@ -143,31 +143,6 @@ class RequestHandler(BaseHTTPRequestHandler):
         print("Send response: ", obj)
         return
 
-    @staticmethod
-    def check_mic(mic):
-        result = subprocess.run(['ffmpeg', '-f', 'dshow', '-list_devices', '1', '-i', 'dummy'],
-                                capture_output=True, text=True, encoding="utf-8")
-
-        # print(result)
-        if result.stderr is not None:
-            if mic in result.stderr:
-                return True
-        if result.stdout is not None:
-            if mic in result.stdout:
-                return True
-        return False
-
-    @staticmethod
-    def check_gpu():
-        try:
-            result = subprocess.run(['nvidia-smi', '-L'],
-                                    capture_output=True, text=True, encoding="utf-8")
-            print('GPU: ', result)
-            return result.returncode == 0
-        except Exception as e:
-            print('Check GPU codec error', e)
-            return False
-
     # Clean resources
     @staticmethod
     def shutdown():
@@ -212,8 +187,6 @@ class RequestHandler(BaseHTTPRequestHandler):
         mic = None
         if 'mic' in form:
             mic = str(form['mic'])
-            if len(mic) > 0 and not self.check_mic(mic):
-                return self.json_response(False, -4, "Invalidate microphone device!")
 
         success = obs_client.configure(str(room), cam1, cam2, mic)
         if success:
@@ -237,7 +210,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         else:
             return self.json_response(False, -3, "Current room {} not exist!".format(room))
 
-    # check start command
+    # Start recording
     def start(self, form):
         if 'room' not in form:
             return self.json_response(False, -1, "Please input Room number!")
@@ -263,7 +236,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return self.json_response(False, -10, "Connect recorder server failed.")
             return self.json_response(False, -9, "Current room {r} is recording".format(r=room))
 
-    # check stop command
+    # Stop recording
     def stop(self, form):
         if 'room' not in form:
             return self.json_response(False, -1, "Please input Room number!")
@@ -279,7 +252,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return self.json_response(False, -10, "Connect recorder server failed.")
             return self.json_response(False, -3, "Current room is not recording")
 
-    # check stop command
+    # Pause recording
     def pause(self, form):
         if 'room' not in form:
             return self.json_response(False, -1, "Please input Room number!")
@@ -295,6 +268,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return self.json_response(False, -10, "Connect recorder server failed.")
             return self.json_response(False, -3, "Current room is not recording")
 
+    # Change if need record screen
     def record_screen(self, form):
         if 'room' not in form:
             return self.json_response(False, -1, "Please input Room number!")
@@ -326,7 +300,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return self.json_response(False, -10, "Connect recorder server failed.")
             return self.json_response(False, -5, "Please input invalid command, 1 to start recording screen and 2 to stop recording screen")
 
-    # 切换摄像头
+    # Switch cameras
     def switch_camera(self, form):
         if 'room' not in form:
             return self.json_response(False, -1, "Please input Room number!")
@@ -349,6 +323,21 @@ class RequestHandler(BaseHTTPRequestHandler):
             return self.json_response(False, -3, "You already have record CAM {}".format(cam))
 
 
+def __launch_obs():
+    obs_dir = r"C:\Users\Meon\File\obs\obs-studio\build\rundir\Debug\bin\64bit"
+    os.chdir(obs_dir)
+    os.startfile(OBS_PROC + ".exe")
+
+
+def __kill_obs():
+    try:
+        cmd = "powershell.exe Get-Process {0} | Stop-Process".format(OBS_PROC)
+        subprocess.Popen(cmd)
+        print("Kill obs proc succeffully")
+    except Exception as e:
+        print("Kill obs proc exception:", e)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="recorder")
     parser.add_argument(
@@ -366,11 +355,17 @@ if __name__ == "__main__":
     print('Started httpserver on port', args.port)
 
     try:
+        # run obs.exe
+        __launch_obs()
+
         server.serve_forever()
     except (KeyboardInterrupt, Exception) as e:
         print("Received exception: ", e)
         pass
     finally:
         print("Stopping now!")
+        # kill obs proc
+        __kill_obs()
+
         server.shutdown()
         server.socket.close()
