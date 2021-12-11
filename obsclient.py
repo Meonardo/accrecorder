@@ -1,16 +1,16 @@
 import asyncio
 import os
-import simpleobsws
 import time
-import platform
 
 from threading import Thread
 from urllib.parse import urlparse
+from simpleobsws import WebSocketClient, Request, IdentificationParameters
 from recorder import RecorderStatus, RecorderSession, print, async_func
 
 
 loop = asyncio.get_event_loop()
-ws = simpleobsws.obsws(host='127.0.0.1', port=9991, password='amdox', loop=loop)
+parameters = IdentificationParameters(ignoreInvalidMessages=False, ignoreNonFatalRequestChecks=False)
+ws = WebSocketClient(url="ws://127.0.0.1:9991", password="amdox", identification_parameters=parameters)
 
 MAIN_SCENE = 'MainScene'
 SCREEN_W = 1920
@@ -24,27 +24,31 @@ OUTPUT_IMG_EXT = 'png'
 class SceneItem:
     def __init__(self, scene, obj: dict):
         self.scene = scene
-        self.name = obj['name']
-        self.type = obj['type']
-        self.id = obj['id']
-        self.visible = True
+        # {'inputKind': 'monitor_capture', 'isGroup': None, 'sceneItemId': 1, 'sceneItemIndex': 0, 'sourceName': 'Screen', 'sourceType': 'OBS_SOURCE_TYPE_INPUT'},
+        self.name = obj['sourceName']
+        self.type = obj['sourceType']
+        self.inputKind = obj['inputKind']
+        self.id = int(obj['sceneItemId'])
+        self.index = int(obj['sceneItemIndex'])
+        self.visible = False
         # self.scale = 1
         # self.width = obj['width']
         # self.height = obj['height']
-        self.x = obj['x']
-        self.y = obj['y']
-        self.locked = obj['locked']
-        self.muted = obj['muted']
+        self.x = 0
+        self.y = 0
+        self.locked = False
+        self.muted = False
 
     async def set_visible(self, visible):
         obj = {
-            "scene-name": self.scene,
+            "sceneName": self.scene,
+            "sceneItemId": self.id,
             "item": self.name,
             "visible": visible
         }
-        r = await ws.call('SetSceneItemProperties', obj)
+        r = await ws.call(Request('SetSceneItemProperties', obj))
         self.visible = visible
-        print("Update visible status", r)
+        print("Update visible status", r.responseData)
         return r
 
     async def delete(self):
@@ -55,8 +59,8 @@ class SceneItem:
                 'name': self.name
             }
         }
-        r = await ws.call('DeleteSceneItem', obj)
-        print("Delete Scene Item {s}: {r}".format(s=self.name, r=r))
+        r = await ws.call(Request('DeleteSceneItem', obj))
+        print("Delete Scene Item {s}: {r}".format(s=self.name, r=r.responseData))
 
     async def reset(self):
         obj = {
@@ -66,12 +70,13 @@ class SceneItem:
                 'name': self.name
             }
         }
-        r = await ws.call('ResetSceneItem', obj)
-        print("Reset Scene Item {s}: {r}".format(s=self.name, r=r))
+        r = await ws.call(Request('ResetSceneItem', obj))
+        print("Reset Scene Item {s}: {r}".format(s=self.name, r=r.responseData))
 
     async def update_position_scale(self, x, y, scale, animated=True):
         obj = {
-            "scene-name": self.scene,
+            "sceneName": self.scene,
+            "sceneItemId": self.id,
             "item": self.name,
             'position': {
                 'alignment': 5,
@@ -83,7 +88,26 @@ class SceneItem:
                 'y': scale
             },
         }
-        return await ws.call('SetSceneItemProperties', obj)
+        r = await ws.call(Request('SetSceneItemProperties', obj))
+        return r.responseData
+
+    async def scaleTo(self, width, height, x, y, animated=True):
+        obj = {
+            "sceneName": self.scene,
+            "sceneItemId": self.id,
+            "item": self.name,
+            'position': {
+                'alignment': 5,
+                'x': x,
+                'y': y
+            },
+            'bounds': {
+                'type': 'OBS_BOUNDS_SCALE_TO_WIDTH',
+                'x': width,
+                'y': height
+            },
+        }
+        await ws.call(Request('SetSceneItemProperties', obj))
 
     async def reorder(self, items):
         if len(items) < 2:
@@ -96,45 +120,48 @@ class SceneItem:
             'items': order_items,
         }
         print("Reorder scene items to:", items)
-        await ws.call('ReorderSceneItems', obj)
+        await ws.call(Request('ReorderSceneItems', obj))
 
 
 class Scene:
-    def __init__(self, name: str, items: list, is_current=True):
+    def __init__(self, name: str, items: list[SceneItem]=None):
         self.name = name
-        self.sources: list[SceneItem] = items
-        self.cam_sources: list[SceneItem] = [item for item in items if item.name != SCREEN_SOURCE_NAME]
-        self.is_current = is_current
+        if items is not None and len(items) > 0:
+            self.sources: list[SceneItem] = items
+            self.cam_sources: list[SceneItem] = [item for item in items if item.name != SCREEN_SOURCE_NAME]
+        self.is_current = True
         self.mic = None
 
     def find_item(self, name) -> SceneItem:
+        if self.sources is None:
+            return None
         if len(self.sources) == 0:
             return None
-        else:
-            for item in self.sources:
-                if item.name == name:
-                    return item
-
+        for item in self.sources:
+            if item.name == name:
+                return item
+            
     async def add_transition_override(self):
         transition = {
             "sceneName": self.name,
             "transitionName": "fade_transition",
             "transitionDuration": 400
         }
-        return await ws.call('SetSceneTransitionOverride', transition)
+        r = await ws.call(Request('SetSceneTransitionOverride', transition))
+        return r.responseData
 
     @staticmethod
     async def file_settings(folder, room, file_format):
-        await ws.call('SetFilenameFormatting', {"filename-formatting": file_format})
-        await ws.call('SetRecordingFolder', {"rec-folder": folder})
+        await ws.call(Request('SetFilenameFormatting', {"filename-formatting": file_format}))
+        await ws.call(Request('SetRecordingDirectory', {"rec-folder": folder}))
 
     @staticmethod
     async def __start_recording():
-        await ws.call('StartRecording')
+        await ws.call(Request('StartRecord'))
 
     @staticmethod
     async def __stop_recording():
-        await ws.call('StopRecording')
+        await ws.call(Request('StopRecord'))
 
     async def start_recording(self, cam, screen):
         cam_item = self.find_item(cam)
@@ -162,10 +189,20 @@ class Scene:
     async def screenshot(self, file):
         obj = {
             "sourceName": self.name,
-            "saveToFilePath": file
+            "imageFormat": OUTPUT_IMG_EXT,
+            "imageFilePath": file,
         }
-        await ws.call('TakeSourceScreenshot', obj)
-
+        await ws.call(Request('SaveSourceScreenshot', obj))
+    
+    async def delete(self) -> bool:
+        print("Deleting scene:", self.name)
+        obj = {
+            "sceneName": self.name,
+        }
+        r = await ws.call(Request('RemoveScene', obj))
+        if r.ok:
+            print("Scene {0} deleted".format(self.name))
+        return r.ok
 
 class ObsClient:
     def __init__(self):
@@ -202,14 +239,17 @@ class ObsClient:
 
     @async_func
     def __retry(self, cam1, cam2, mic):
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(
+        retry_loop = asyncio.new_event_loop()
+        retry_loop.run_until_complete(
             self.__reconnect_obs(cam1, cam2, mic)
         )
+        retry_loop.close()
 
     async def __reconnect_obs(self, cam1, cam2, mic):
         try:
             await ws.connect()
+            await ws.wait_until_identified()
+
             self.obs_connected = True
             print("Obs connected")
             await self.__create_scene(cam1, cam2, mic)
@@ -222,6 +262,8 @@ class ObsClient:
         if not self.obs_connected:
             try:
                 await ws.connect()
+                await ws.wait_until_identified()
+
                 print("Obs connected")
                 self.obs_connected = True
             except Exception as exc:
@@ -232,16 +274,17 @@ class ObsClient:
         scene_name = MAIN_SCENE
         scene = await self.__find_scene(scene_name)
         if scene is not None:
-            for source in scene.sources:
-                await source.reset()
-        else:
-            # 创建当前 scene
-            await self.create_scene(scene_name)
+            # Remove exists scene
+            await scene.delete()
 
-        # 选中当前 Scene
-        await ws.call('SetCurrentScene', {"scene-name": MAIN_SCENE})
+        await asyncio.sleep(1)
 
-        # 创建 sources
+        # create scene
+        await self.create_scene(scene_name)
+        # select the scene
+        await ws.call(Request('SetCurrentProgramScene', {"sceneName": scene_name}))
+
+        # create sources
         screen_source_name = SCREEN_SOURCE_NAME
         r = await self.__create_screen_capture(scene_name, screen_source_name)
         print("Create SCREEN Source:", r)
@@ -254,49 +297,50 @@ class ObsClient:
         r = await self.__create_rtsp_source(scene_name, cam2_source_name, cam2)
         print("Create CAM2 Source:", r)
         
-        # 刷新 scene 对象
+        # refresh scene & sceneItems
         self.scene = await self.__find_scene(scene_name)
         self.scene.mic = mic
 
-        # 初始化位置设置和隐藏
+        # init sceneItems pos & scale
         x = SCREEN_W - SCREEN_W * CAM_SCALE
         y = SCREEN_H - SCREEN_H * CAM_SCALE
         cam1_item = self.scene.find_item(cam1_source_name)
         if cam1_item is not None:
-            await cam1_item.set_visible(False)
             await cam1_item.update_position_scale(x, y, CAM_SCALE)
         cam2_item = self.scene.find_item(cam2_source_name)
         if cam2_item is not None:
-            await cam2_item.set_visible(False)
             await cam2_item.update_position_scale(x, y, CAM_SCALE)
         screen_item = self.scene.find_item(screen_source_name)
         if screen_item is not None:
-            await screen_item.set_visible(False)
+            await screen_item.scaleTo(SCREEN_W, SCREEN_H, 0, 0)
+
 
     @staticmethod
     async def __find_scene(name: str):
-        scenes = await ws.call('GetSceneList')
+        scenes = await ws.call(Request('GetSceneList'))
+        if not scenes.ok:
+            return None
+
+        scenes = scenes.responseData
         if 'scenes' in scenes:
-            current = scenes['current-scene']
             scenes = scenes['scenes']
             for scene in scenes:
-                if scene['name'] == name:
-                    items = [SceneItem(name, item) for item in scene['sources']]
-                    s = Scene(name, items, is_current=(name == current))
-                    return s
-
-    @staticmethod
-    def __find_source(scene: dict, name: str):
-        if 'sources' in scene:
-            for source in scene['sources']:
-                if source['name'] == name:
-                    print("Screen Source: ", source)
-                    return source
+                if scene['sceneName'] == name:
+                    r = await ws.call(Request("GetSceneItemList", {"sceneName": name}))
+                    if r.ok and r.has_data():
+                        items = r.responseData["sceneItems"]
+                        items = [SceneItem(name, item) for item in items]
+                        s = Scene(name, items)
+                        return s
+                    else:
+                        s = Scene(name)
 
     @staticmethod
     async def create_scene(name: str):
-        r = await ws.call('CreateScene', {"sceneName": name})
-        print("Create Scene:", r)
+        print("Creating scene:", name)
+        r = await ws.call(Request('CreateScene', {"sceneName": name}))
+        if not r.ok:
+            print("Create Scene failed")
 
     @staticmethod
     async def __create_screen_capture(scene_name: str, source_name: str):
@@ -309,10 +353,10 @@ class ObsClient:
             "y": 0,
             "monitor": 1
         }
-        all_types = await ws.call('GetSourceTypesList')
+        all_types = await ws.call(Request('GetSourceTypesList'))
+        all_types = all_types.responseData
         all_types = all_types['types']
         type_ids = [type['typeId'] for type in all_types if 'typeId' in type]
-        print(type_ids)
 
         type = 'monitor_capture'
         if 'monitor_capture' in type_ids:
@@ -324,24 +368,17 @@ class ObsClient:
             "sceneName": scene_name,
             "sourceName": source_name,
             "sourceKind": type,
+            "setVisible": False,
             "sourceSettings": source_settings
         }
-        await ws.call('CreateSource', obj)
+        r = await ws.call(Request('CreateSource', obj))
 
-        obj = {
-            "item": source_name,
-            'position': {
-                'alignment': 5,
-                'x': 0,
-                'y': 0
-            },
-            'bounds': {
-                'type': 'OBS_BOUNDS_SCALE_TO_WIDTH',
-                'x': SCREEN_W,
-                'y': SCREEN_H
-            },
-        }
-        return await ws.call('SetSceneItemProperties', obj)
+        sceneItemId = "0"
+        if r.responseData is not None and 'sceneItemId' in r.responseData:
+            sceneItemId = r.responseData["sceneItemId"]
+            if sceneItemId == "0":
+                return None
+        return r.responseData
 
     @staticmethod
     async def __create_rtsp_source(scene_name: str, source_name: str, rtsp: str):
@@ -368,32 +405,11 @@ class ObsClient:
             "sceneName": scene_name,
             "sourceName": source_name,
             "sourceKind": "gstreamer-source",
+            "setVisible": False,
             "sourceSettings": source_settings
         }
-        return await ws.call('CreateSource', obj)
-
-    @staticmethod
-    async def __create_file_source(scene_name: str, source_name: str, file_path: str, visible=True):
-        source_settings = {
-            "alignment": 5,
-            "locked": True,
-            "name": source_name,
-            "source_cx": SCREEN_W,
-            "source_cy": SCREEN_H,
-            "is_local_file": True,
-            "hw_decode": True,
-            "looping": True,
-            "visible": visible,
-            "input_format": "file",
-            "local_file": file_path,
-        }
-        obj = {
-            "sceneName": scene_name,
-            "sourceName": source_name,
-            "sourceKind": "ffmpeg_source",
-            "sourceSettings": source_settings
-        }
-        return await ws.call('CreateSource', obj)
+        r = await ws.call(Request('CreateSource', obj))
+        return r.responseData
 
     # configure
     def configure(self, room, cam1, cam2, mic):
@@ -412,7 +428,7 @@ class ObsClient:
 
         return True
 
-    # 开始录制视频
+    # start recording
     def start_recording(self, room, cam, screen):
         if not self.obs_connected:
             return False
@@ -444,7 +460,7 @@ class ObsClient:
         )
 
         recorder.status = RecorderStatus.Recording
-        # 截图
+        # take a screenshot
         self.__take_screenshot(room, time_str, recorder)
 
         return True
@@ -460,7 +476,7 @@ class ObsClient:
         )
         print("Room {r} Take screen shot successfully at file path {p}".format(r=room, p=recorder.thumbnail_file_path))
 
-    # 切换摄像头
+    # switch cameras
     def switch_camera(self, room, cam):
         if not self.obs_connected:
             return False
@@ -510,7 +526,7 @@ class ObsClient:
         recorder.recording_cam = cam
         return True
 
-    # 开始录制屏幕
+    # start recording screen
     def start_recording_screen(self, room):
         if not self.obs_connected:
             return False
@@ -547,7 +563,7 @@ class ObsClient:
         else:
             return False
 
-    # 结束录制屏幕
+    # stop recording screen
     def stop_recording_screen(self, room):
         if not self.obs_connected:
             return False
@@ -579,11 +595,11 @@ class ObsClient:
         else:
             return False
 
-    # 暂停录制
+    # pause recording
     def pause_recording(self, room):
         return self.stop_recording(room, True)
 
-    # 停止录制
+    # stop recording
     def stop_recording(self, room, pause=False):
         if not self.obs_connected:
             return None
@@ -632,7 +648,7 @@ class ObsClient:
             }
             return data
 
-    # 获取上传文件的信息，如：时长和文件大小
+    # fetch recorded file info: duration & filesize
     @staticmethod
     def fetch_filesize(video_path):
         import json

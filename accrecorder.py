@@ -28,7 +28,7 @@ ROUTE_RESET = "/record/reset"
 ROUTE_PAUSE = "/record/pause"
 ROUTE_RECORD_SCREEN = "/record/screen"
 ROUTE_SWITCH_CAMERA = "/record/camera"
-OBS_PROC = "obs64"
+OBS_PROC = "accrecorder64"
 
 obs_client = ObsClient()
 
