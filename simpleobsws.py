@@ -17,16 +17,12 @@ from inspect import signature
 RPC_VERSION = 1
 
 class RequestBatchExecutionType(enum.Enum):
-    OBS_WEBSOCKET_REQUEST_BATCH_EXECUTION_TYPE_SERIAL_REALTIME = 'OBS_WEBSOCKET_REQUEST_BATCH_EXECUTION_TYPE_SERIAL_REALTIME'
-    SERIAL_REALTIME = 'OBS_WEBSOCKET_REQUEST_BATCH_EXECUTION_TYPE_SERIAL_REALTIME'
-    OBS_WEBSOCKET_REQUEST_BATCH_EXECUTION_TYPE_SERIAL_FRAME = 'OBS_WEBSOCKET_REQUEST_BATCH_EXECUTION_TYPE_SERIAL_FRAME'
-    SERIAL_FRAME = 'OBS_WEBSOCKET_REQUEST_BATCH_EXECUTION_TYPE_SERIAL_FRAME'
-    OBS_WEBSOCKET_REQUEST_BATCH_EXECUTION_TYPE_PARALLEL = 'OBS_WEBSOCKET_REQUEST_BATCH_EXECUTION_TYPE_PARALLEL'
-    PARALLEL = 'OBS_WEBSOCKET_REQUEST_BATCH_EXECUTION_TYPE_PARALLEL'
+    SerialRealtime = 0
+    SerialFrame = 1
+    Parallel = 2
 
 @dataclass
 class IdentificationParameters:
-    ignoreInvalidMessages: bool = None
     ignoreNonFatalRequestChecks: bool = None
     eventSubscriptions: int = None
 
@@ -34,6 +30,8 @@ class IdentificationParameters:
 class Request:
     requestType: str
     requestData: dict = None
+    inputVariables: dict = None # Request batch only
+    outputVariables: dict = None # Request batch only
 
 @dataclass
 class RequestStatus:
@@ -88,6 +86,7 @@ class WebSocketClient:
         self.event_callbacks = []
         self.cond = asyncio.Condition()
 
+    # Todo: remove bool return, raise error if already open
     async def connect(self):
         if self.ws != None and self.ws.open:
             log.debug('WebSocket session is already open. Returning early.')
@@ -110,6 +109,7 @@ class WebSocketClient:
         except asyncio.TimeoutError:
             return False
 
+    # Todo: remove bool return, raise error if already closed
     async def disconnect(self):
         if self.recv_task == None:
             log.debug('WebSocket session is not open. Returning early.')
@@ -136,9 +136,6 @@ class WebSocketClient:
         }
         if request.requestData != None:
             request_payload['d']['requestData'] = request.requestData
-        else:
-            request_payload['d']['requestData'] = {}
-
         log.debug('Sending Request message:\n{}'.format(json.dumps(request_payload, indent=2)))
         waiter = _ResponseWaiter()
         try:
@@ -167,7 +164,7 @@ class WebSocketClient:
         log.debug('Sending Request message:\n{}'.format(json.dumps(request_payload, indent=2)))
         await self.ws.send(json.dumps(request_payload))
 
-    async def call_batch(self, requests: list, timeout: int = 15, halt_on_failure: bool = False, execution_type: RequestBatchExecutionType = None):
+    async def call_batch(self, requests: list, timeout: int = 15, halt_on_failure: bool = None, execution_type: RequestBatchExecutionType = None, variables: dict = None):
         if not self.identified:
             raise NotIdentifiedError('Calls to requests cannot be made without being identified with obs-websocket.')
         request_batch_id = str(uuid.uuid1())
@@ -175,17 +172,24 @@ class WebSocketClient:
             'op': 8,
             'd': {
                 'requestId': request_batch_id,
-                'haltOnFailure': halt_on_failure,
                 'requests': []
             }
         }
+        if halt_on_failure != None:
+            request_batch_payload['d']['haltOnFailure'] = halt_on_failure
         if execution_type:
             request_batch_payload['d']['executionType'] = execution_type.value
+        if variables:
+            request_batch_payload['d']['variables'] = variables
         for request in requests:
             request_payload = {
                 'requestType': request.requestType
             }
-            if request.requestData != None:
+            if request.inputVariables:
+                request_payload['inputVariables'] = request.inputVariables
+            if request.outputVariables:
+                request_payload['outputVariables'] = request.outputVariables
+            if request.requestData:
                 request_payload['requestData'] = request.requestData
             request_batch_payload['d']['requests'].append(request_payload)
         log.debug('Sending Request batch message:\n{}'.format(json.dumps(request_batch_payload, indent=2)))
@@ -203,7 +207,7 @@ class WebSocketClient:
             ret.append(self._build_request_response(result))
         return ret
 
-    async def emit_batch(self, requests: list, halt_on_failure: bool = False, execution_type: RequestBatchExecutionType = None):
+    async def emit_batch(self, requests: list, halt_on_failure: bool = None, execution_type: RequestBatchExecutionType = None, variables: dict = None):
         if not self.identified:
             raise NotIdentifiedError('Emits to requests cannot be made without being identified with obs-websocket.')
         request_batch_id = str(uuid.uuid1())
@@ -211,29 +215,32 @@ class WebSocketClient:
             'op': 8,
             'd': {
                 'requestId': 'emit_{}'.format(request_batch_id),
-                'haltOnFailure': halt_on_failure,
                 'requests': []
             }
         }
+        if halt_on_failure != None:
+            request_batch_payload['d']['haltOnFailure'] = halt_on_failure
         if execution_type:
             request_batch_payload['d']['executionType'] = execution_type.value
+        if variables:
+            request_batch_payload['d']['variables'] = variables
         for request in requests:
             request_payload = {
                 'requestType': request.requestType
             }
-            if request.requestData != None:
+            if request.requestData:
                 request_payload['requestData'] = request.requestData
             request_batch_payload['d']['requests'].append(request_payload)
         log.debug('Sending Request batch message:\n{}'.format(json.dumps(request_batch_payload, indent=2)))
         await self.ws.send(json.dumps(request_batch_payload))
 
-    def register_event_callback(self, callback, event = None):
+    def register_event_callback(self, callback, event: str = None):
         if not inspect.iscoroutinefunction(callback):
             raise EventRegistrationError('Registered functions must be async')
         else:
             self.event_callbacks.append((callback, event))
 
-    def deregister_event_callback(self, callback, event = None):
+    def deregister_event_callback(self, callback, event: str = None):
         for c, t in self.event_callbacks.copy():
             if (c == callback) and (event == None or t == event):
                 self.event_callbacks.remove((c, t))
@@ -260,8 +267,6 @@ class WebSocketClient:
             secret = base64.b64encode(hashlib.sha256((self.password + self.hello_message['authentication']['salt']).encode('utf-8')).digest())
             authentication_string = base64.b64encode(hashlib.sha256(secret + (self.hello_message['authentication']['challenge'].encode('utf-8'))).digest()).decode('utf-8')
             identify_message['d']['authentication'] = authentication_string
-        if self.identification_parameters.ignoreInvalidMessages != None:
-            identify_message['d']['ignoreInvalidMessages'] = self.identification_parameters.ignoreInvalidMessages
         if self.identification_parameters.ignoreNonFatalRequestChecks != None:
             identify_message['d']['ignoreNonFatalRequestChecks'] = self.identification_parameters.ignoreNonFatalRequestChecks
         if self.identification_parameters.eventSubscriptions != None:

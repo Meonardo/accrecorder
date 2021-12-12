@@ -184,11 +184,17 @@ class RequestHandler(BaseHTTPRequestHandler):
         if not cam2.startswith('rtsp'):
             return self.json_response(False, -3, "Please input correct RTSP cam address!")
 
+        if 'monitor' not in form:
+            return self.json_response(False, -2, "Please input monitor index!")
+        monitor = str(form["monitor"])
+        if not monitor.isdigit():
+            return self.json_response(False, -4, "Please input correct monitor index!")
+
         mic = None
         if 'mic' in form:
             mic = str(form['mic'])
 
-        success = obs_client.configure(str(room), cam1, cam2, mic)
+        success = obs_client.configure(str(room), cam1, cam2, mic, monitor)
         if success:
             return self.json_response(True, 0, "Room {} is configured".format(room))
         else:

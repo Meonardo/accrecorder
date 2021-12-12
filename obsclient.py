@@ -9,17 +9,25 @@ from recorder import RecorderStatus, RecorderSession, print, async_func
 
 
 loop = asyncio.get_event_loop()
-parameters = IdentificationParameters(ignoreInvalidMessages=False, ignoreNonFatalRequestChecks=False)
+parameters = IdentificationParameters(ignoreNonFatalRequestChecks=False)
 ws = WebSocketClient(url="ws://127.0.0.1:9991", password="amdox", identification_parameters=parameters)
 
 MAIN_SCENE = 'MainScene'
+AUDIO_INPUT_NAME = "Microphone"
+SCREEN_SOURCE_NAME = 'Screen'
+
 SCREEN_W = 1920
 SCREEN_H = 1080
 CAM_SCALE = 1 / 3
-SCREEN_SOURCE_NAME = 'Screen'
+
 OUTPUT_FILE_EXT = 'mp4'
 OUTPUT_IMG_EXT = 'png'
 
+
+class SceneItemDevice:
+    def __init__(self, obj: dict):
+        self.name = str(obj['itemName'])
+        self.id = str(obj['itemValue'])
 
 class SceneItem:
     def __init__(self, scene, obj: dict):
@@ -31,13 +39,11 @@ class SceneItem:
         self.id = int(obj['sceneItemId'])
         self.index = int(obj['sceneItemIndex'])
         self.visible = False
-        # self.scale = 1
-        # self.width = obj['width']
-        # self.height = obj['height']
         self.x = 0
         self.y = 0
         self.locked = False
         self.muted = False
+        self.device: SceneItemDevice = None
 
     async def set_visible(self, visible):
         obj = {
@@ -126,6 +132,7 @@ class SceneItem:
 class Scene:
     def __init__(self, name: str, items: list[SceneItem]=None):
         self.name = name
+        self.sources = None
         if items is not None and len(items) > 0:
             self.sources: list[SceneItem] = items
             self.cam_sources: list[SceneItem] = [item for item in items if item.name != SCREEN_SOURCE_NAME]
@@ -151,7 +158,7 @@ class Scene:
         return r.responseData
 
     @staticmethod
-    async def file_settings(folder, room, file_format):
+    async def file_settings(folder, file_format):
         await ws.call(Request('SetFilenameFormatting', {"filename-formatting": file_format}))
         await ws.call(Request('SetRecordingDirectory', {"rec-folder": folder}))
 
@@ -167,7 +174,7 @@ class Scene:
         cam_item = self.find_item(cam)
         if cam_item is not None:
             await cam_item.set_visible(True)
-            # 全屏显示摄像头
+            # fullscreen camera sceneItem
             if not screen:
                 await cam_item.update_position_scale(0, 0, 1)
         if screen:
@@ -175,17 +182,14 @@ class Scene:
             if screen_item is not None:
                 await screen_item.set_visible(True)
 
-        # 开始录制
         await self.__start_recording()
 
     async def stop_recording(self):
         for source in self.sources:
             await source.set_visible(False)
 
-        # 结束录制
         await self.__stop_recording()
 
-    # 截屏
     async def screenshot(self, file):
         obj = {
             "sourceName": self.name,
@@ -238,83 +242,85 @@ class ObsClient:
         return r
 
     @async_func
-    def __retry(self, cam1, cam2, mic):
+    def __retry(self, cam1, cam2, mic, monitor):
         retry_loop = asyncio.new_event_loop()
         retry_loop.run_until_complete(
-            self.__reconnect_obs(cam1, cam2, mic)
+            self.__reconnect_obs(cam1, cam2, mic, monitor)
         )
         retry_loop.close()
 
-    async def __reconnect_obs(self, cam1, cam2, mic):
-        try:
-            await ws.connect()
-            await ws.wait_until_identified()
-
-            self.obs_connected = True
-            print("Obs connected")
-            await self.__create_scene(cam1, cam2, mic)
-        except Exception as exc:
-            print("Obs connection exception, reconnecting...", exc)
-            await asyncio.sleep(3)
-            await self.__reconnect_obs(cam1, cam2, mic)
-
-    async def __create_scene(self, cam1, cam2, mic):
+    async def __connect_obs(self, cam1, cam2, mic, monitor):
         if not self.obs_connected:
             try:
                 await ws.connect()
                 await ws.wait_until_identified()
-
-                print("Obs connected")
+                print("websocket connected")
                 self.obs_connected = True
             except Exception as exc:
-                print("Obs connection exception", exc)
+                print("websocket connection exception", exc)
                 self.__retry(cam1, cam2, mic)
                 return
+        print("websocket connected, creating scene & sources...")
+        await self.__create_scene()
+        # create sources & config them
+        await self.__create_sources(cam1, cam2, monitor, mic)
+        # register events
+        # ws.register_event_callback(self.__on_events_change)
 
-        scene_name = MAIN_SCENE
-        scene = await self.__find_scene(scene_name)
+    async def __on_events_change(self, type, data):
+        print('New event! Type: {} | Raw Data: {}'.format(type, data))
+
+    async def __reconnect_obs(self, cam1, cam2, mic, monitor):
+        try:
+            await ws.connect()
+            await ws.wait_until_identified()
+            self.obs_connected = True
+            await self.__connect_obs(self, cam1, cam2, mic, monitor)
+        except Exception as exc:
+            print("websocket connection exception, reconnecting...", exc)
+            await asyncio.sleep(3)
+            await self.__reconnect_obs(cam1, cam2, mic, monitor)
+
+    async def __create_scene(self):
+        scene = await self.__find_scene(MAIN_SCENE)
         if scene is not None:
             # Remove exists scene
             await scene.delete()
-
+        # in case of Obs not created the scene 
         await asyncio.sleep(1)
-
         # create scene
-        await self.create_scene(scene_name)
+        r = await ws.call(Request('CreateScene', {"sceneName": MAIN_SCENE}))
+        if not r.ok:
+            print("Create Scene failed")
         # select the scene
-        await ws.call(Request('SetCurrentProgramScene', {"sceneName": scene_name}))
+        await ws.call(Request('SetCurrentProgramScene', {"sceneName": MAIN_SCENE}))
 
-        # create sources
-        screen_source_name = SCREEN_SOURCE_NAME
-        r = await self.__create_screen_capture(scene_name, screen_source_name)
-        print("Create SCREEN Source:", r)
+    async def __create_sources(self, cam1, cam2, monitor, mic):
+        # create sceneItems
+        await self.__create_screen_capture_input(monitor)
+        await self.__create_audio_capture_input(mic)
+        await self.__create_rtsp_input(cam1)
+        await self.__create_rtsp_input(cam2)
 
+        # refresh scene & sceneItems
+        self.scene = await self.__find_scene(MAIN_SCENE)
+
+        # config
+        x = SCREEN_W - SCREEN_W * CAM_SCALE
+        y = SCREEN_H - SCREEN_H * CAM_SCALE
         cam1_source_name = self.__rtsp_to_str(cam1)
         cam2_source_name = self.__rtsp_to_str(cam2)
 
-        r = await self.__create_rtsp_source(scene_name, cam1_source_name, cam1)
-        print("Create CAM1 source:", r)
-        r = await self.__create_rtsp_source(scene_name, cam2_source_name, cam2)
-        print("Create CAM2 Source:", r)
-        
-        # refresh scene & sceneItems
-        self.scene = await self.__find_scene(scene_name)
-        self.scene.mic = mic
-
-        # init sceneItems pos & scale
-        x = SCREEN_W - SCREEN_W * CAM_SCALE
-        y = SCREEN_H - SCREEN_H * CAM_SCALE
         cam1_item = self.scene.find_item(cam1_source_name)
         if cam1_item is not None:
             await cam1_item.update_position_scale(x, y, CAM_SCALE)
         cam2_item = self.scene.find_item(cam2_source_name)
         if cam2_item is not None:
             await cam2_item.update_position_scale(x, y, CAM_SCALE)
-        screen_item = self.scene.find_item(screen_source_name)
+        screen_item = self.scene.find_item(SCREEN_SOURCE_NAME)
         if screen_item is not None:
             await screen_item.scaleTo(SCREEN_W, SCREEN_H, 0, 0)
-
-
+        
     @staticmethod
     async def __find_scene(name: str):
         scenes = await ws.call(Request('GetSceneList'))
@@ -335,65 +341,81 @@ class ObsClient:
                     else:
                         s = Scene(name)
 
-    @staticmethod
-    async def create_scene(name: str):
-        print("Creating scene:", name)
-        r = await ws.call(Request('CreateScene', {"sceneName": name}))
-        if not r.ok:
-            print("Create Scene failed")
+    async def __create_screen_capture_input(self, monitor):
+        print("creating screen capture device: ", monitor)
+        input_kind = 'monitor_capture'
 
-    @staticmethod
-    async def __create_screen_capture(scene_name: str, source_name: str):
-        source_settings = {
-            "alignment": 5,
-            "locked": True,
-            "name": source_name,
-            "render": True,
-            "x": 0,
-            "y": 0,
-            "monitor": 1
-        }
         all_types = await ws.call(Request('GetSourceTypesList'))
-        all_types = all_types.responseData
-        all_types = all_types['types']
-        type_ids = [type['typeId'] for type in all_types if 'typeId' in type]
+        if all_types.ok() and all_types.has_data():
+            all_types = all_types.responseData
+            all_types = all_types['types']
+            type_ids = [type['typeId'] for type in all_types if 'typeId' in type]
+            if 'monitor_capture' in type_ids:
+                input_kind = "monitor_capture"
+            elif 'display_capture' in type_ids:
+                input_kind = "display_capture"
 
-        type = 'monitor_capture'
-        if 'monitor_capture' in type_ids:
-            type = "monitor_capture"
-        elif 'display_capture' in type_ids:
-            type = "display_capture"
-
+        input_name = SCREEN_SOURCE_NAME
         obj = {
-            "sceneName": scene_name,
-            "sourceName": source_name,
-            "sourceKind": type,
-            "setVisible": False,
-            "sourceSettings": source_settings
+            "inputKind": input_kind,
+            "inputName": input_name,
+            "sceneName": MAIN_SCENE,
         }
-        r = await ws.call(Request('CreateSource', obj))
+        r = await ws.call(Request("CreateInput", obj))
+        if r.ok():
+            print("create screen capture {0} input succeed".format(monitor))
 
-        sceneItemId = "0"
-        if r.responseData is not None and 'sceneItemId' in r.responseData:
-            sceneItemId = r.responseData["sceneItemId"]
-            if sceneItemId == "0":
-                return None
-        return r.responseData
+        r = await ws.call(Request("GetInputPropertiesListPropertyItems", {"inputName": input_name, "propertyName": "monitor"}))
+        if r.ok() and r.has_data():
+            propertyItems = r.responseData['propertyItems']
+            devices = [SceneItemDevice(item) for item in propertyItems]
+            for d in devices:
+                if d.id == monitor:
+                    # update device
+                    inputSettings = {
+                        "monitor": int(d.id),
+                        "cursor": True,
+                        # "method": "",
+                    }
+                    r = await ws.call(Request("SetInputSettings", {"inputName": input_name, "inputSettings": inputSettings}))
+                    if r.ok():
+                        print("update screen capture device to {0} successffully".format(d.name))
+                    break
 
-    @staticmethod
-    async def __create_rtsp_source(scene_name: str, source_name: str, rtsp: str):
+    async def __create_audio_capture_input(self, mic):
+        print("creating audio capture device: ", mic)
+        input_kind = "wasapi_input_capture"
+        input_name = AUDIO_INPUT_NAME
+        obj = {
+            "inputKind": input_kind,
+            "inputName": input_name,
+            "sceneName": MAIN_SCENE,
+        }
+        r = await ws.call(Request("CreateInput", obj))
+        if r.ok():
+            print("create {0} input succeed".format(mic))
+        
+        r = await ws.call(Request("GetInputPropertiesListPropertyItems", {"inputName": input_name, "propertyName": "device_id"}))
+        if r.ok() and r.has_data():
+            propertyItems = r.responseData['propertyItems']
+            devices = [SceneItemDevice(item) for item in propertyItems]
+            for d in devices:
+                if d.name == mic:
+                    # update device
+                    inputSettings = {
+                        "device_id": d.id
+                    }
+                    r = await ws.call(Request("SetInputSettings", {"inputName": input_name, "inputSettings": inputSettings}))
+                    if r.ok:
+                        print("update audio input device to {0} successffully".format(d.name))
+                    break
+    
+    async def __create_rtsp_input(self, rtsp):
+        print("creating gst-rtsp input: ", rtsp)
+        input_kind = "gstreamer-source"
+        input_name = self.__rtsp_to_str(rtsp)
         pipeline = "uridecodebin uri={0} name=bin ! queue ! video.".format(rtsp)
-        source_settings = {
-            "alignment": 5,
-            "width": SCREEN_W,
-            "height": SCREEN_H,
-            "locked": True,
-            "name": source_name,
-            "render": True,
-            "x": 0,
-            "y": 0,
-            "source_cx": SCREEN_W,
-            "source_cy": SCREEN_H,
+        input_settings = {
             "pipeline": pipeline,
             "sync_appsink_video": False,
             "sync_appsink_audio": False,
@@ -402,21 +424,21 @@ class ObsClient:
             "stop_on_hide": False,
         }
         obj = {
-            "sceneName": scene_name,
-            "sourceName": source_name,
-            "sourceKind": "gstreamer-source",
-            "setVisible": False,
-            "sourceSettings": source_settings
+            "inputKind": input_kind,
+            "inputName": input_name,
+            "sceneName": MAIN_SCENE,
+            "inputSettings": input_settings,
         }
-        r = await ws.call(Request('CreateSource', obj))
-        return r.responseData
+        r = await ws.call(Request("CreateInput", obj))
+        if r.ok():
+            print("create gst-rtsp {0} source succeed".format(rtsp))
 
     # configure
-    def configure(self, room, cam1, cam2, mic):
+    def configure(self, room, cam1, cam2, mic, monitor):
         # create recorder session
         self.__create_recorder(room)
         loop.run_until_complete(
-            self.__create_scene(cam1, cam2, mic)
+            self.__connect_obs(cam1, cam2, mic, monitor)
         )
         return self.obs_connected
 
@@ -452,7 +474,7 @@ class ObsClient:
 
         asyncio.set_event_loop(loop)
         tasks = [
-            self.scene.file_settings(recorder.folder, room, output_format),
+            self.scene.file_settings(recorder.folder, output_format),
             self.scene.start_recording(cam_source_name, screen)
         ]
         loop.run_until_complete(
@@ -461,13 +483,12 @@ class ObsClient:
 
         recorder.status = RecorderStatus.Recording
         # take a screenshot
-        self.__take_screenshot(room, time_str, recorder)
+        self.__take_screenshot(room, output_format, recorder)
 
         return True
 
     @async_func
-    def __take_screenshot(self, room, time_str, recorder: RecorderSession):
-        output_format = "output_{}_".format(room) + time_str
+    def __take_screenshot(self, room, output_format, recorder: RecorderSession):
         recorder.thumbnail_file_path = recorder.folder + output_format + "." + OUTPUT_IMG_EXT
         time.sleep(2)
         asyncio.set_event_loop(loop)
