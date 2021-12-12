@@ -261,11 +261,26 @@ class ObsClient:
                 self.__retry(cam1, cam2, mic)
                 return
         print("websocket connected, creating scene & sources...")
+        # remove default mic capture
+        await self.__remove_default_mic_aux()
         await self.__create_scene()
         # create sources & config them
         await self.__create_sources(cam1, cam2, monitor, mic)
         # register events
         # ws.register_event_callback(self.__on_events_change)
+
+    async def __remove_default_mic_aux(self):
+        input_list = await ws.call(Request("GetInputList"))
+        if input_list.has_data():
+            print("input list:", input_list.responseData["inputs"])
+            targets = ["Mic/Aux", "Desktop Audio"]
+            for t in targets:
+                # mute first(there is a bug that remove input but the obs not remove its UI)
+                r = await ws.call(Request("SetInputMute", {"inputName": t, "inputMuted": True}))
+                r = await ws.call(Request("RemoveInput", {"inputName": t}))
+                if r.ok():
+                    print("remove input {} succeed".format(t))
+
 
     async def __on_events_change(self, type, data):
         print('New event! Type: {} | Raw Data: {}'.format(type, data))
